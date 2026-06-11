@@ -1,0 +1,38 @@
+# ── Dependencies ──
+node_modules/
+
+# ── Build outputs ──
+desktop/dist/
+desktop/src-tauri/target/
+.vite/
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.code-workspace
+.codebuddy/
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop/public/.DS_Store
+
+# ── Env ──
+.env
+.env.local
+.env.*.local
+
+# ── Logs ──
+*.log
+npm-debug.log*
+
+# ── Temp ──
+*.tmp
+*.swp
+*.swo
+
+# ── Misc ──
+*.py
+*.pyc
+__pycache__/
+img/

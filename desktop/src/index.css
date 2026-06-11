@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* 使用 class 策略控制暗色模式（配合 App.tsx 中 <html> 的 .dark class） */
+@variant dark (&:where(.dark, .dark *));
+
+/* stylelint-disable-next-line */
+@theme {
+  --color-primary: #e60026;
+  --color-primary-dark: #ff3b3b;
+  --color-bg-light: #ffffff;
+  --color-bg-dark: #1a1a1a;
+  --color-surface-light: #f5f5f5;
+  --color-surface-dark: #2a2a2a;
+  --color-text-light: #1a1a1a;
+  --color-text-dark: #ffffff;
+  --color-text-secondary-light: #666666;
+  --color-text-secondary-dark: #999999;
+  --color-border-light: #e5e5e5;
+  --color-border-dark: #333333;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Download Progress Toast Animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Vinyl disc rotation for song detail page */
+@keyframes vinylSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Shimmer animation for sidebar logo title */
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: 0% center; }
+}
+.animate-shimmer {
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Thin scrollbar for download toast */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ═══ 性能优化 (借鉴 AlgerMusicPlayer) ═══ */
+
+/* content-visibility: auto — 浏览器自动跳过屏幕外元素的渲染/布局/绘制
+   大幅减少首屏 DOM 开销，是列表流畅的核心优化 */
+.song-row-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 50px;
+}
+.grid-card-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
+}
+.artist-grid-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 130px;
+}
+
+/* 减少非必要动画在大量元素上的 GPU 开销 */
+.animate-limited .duration-500 {
+  animation-duration: 0ms !important;
+  transition-duration: 0ms !important;
+}
