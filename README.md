@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="public/logo.png" width="96" alt="RanNuan Music" />
+  <img src="/desktop/public/logo.png" width="96" alt="RanNuan Music" />
 </p>
 
 <h1 align="center">RanNuan Music Player</h1>
-<p align="center"><strong>然暖音乐播放器 · 桌面端</strong></p>
+<p align="center"><strong>冉暖音乐播放器 · 桌面端</strong></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tauri-2.11-orange?logo=tauri" />
@@ -62,15 +62,15 @@
 
 | 首页 | 歌曲详情 |
 |:---:|:---:|
-| ![首页](screenshots/home.png) | ![歌曲详情](screenshots/song-detail.png) |
+| ![首页](/desktop/screenshots/home.png) | ![歌曲详情](/desktop/screenshots/song-detail.png) |
 
 | 搜索 | 设置 |
 |:---:|:---:|
-| ![搜索](screenshots/search.png) | ![设置](screenshots/settings.png) |
+| ![搜索](/desktop/screenshots/search.png) | ![设置](/desktop/screenshots/settings.png) |
 
 | 托盘菜单 | 迷你播放器 |
 |:---:|:---:|
-| ![托盘](screenshots/tray.png) | ![迷你](screenshots/mini-player.png) |
+| ![托盘](/desktop/screenshots/tray.png) | ![迷你](/desktop/screenshots/mini-player.png) |
 
 > 📸 截图请放入 `screenshots/` 目录后自行替换
 

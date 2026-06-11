@@ -4,7 +4,7 @@
   "version": "1.5.0",
   "identifier": "com.rannuan.music",
   "build": {
-    "frontendDist": "./dist",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
