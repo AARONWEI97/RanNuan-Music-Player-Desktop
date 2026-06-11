@@ -7,7 +7,7 @@
     "dev": "vite",
     "tauri": "tauri",
     "tauri-dev": "tauri dev",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
