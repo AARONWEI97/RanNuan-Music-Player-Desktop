@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="public/logo.png" width="96" alt="RanNuan Music" />
+  <img src="desktop/public/logo.png" width="96" alt="RanNuan Music" />
 </p>
 
 <h1 align="center">RanNuan Music Player</h1>
-<p align="center"><strong>然暖音乐播放器 · 桌面端</strong></p>
+<p align="center"><strong>冉暖音乐播放器 · 桌面端</strong></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tauri-2.11-orange?logo=tauri" />
