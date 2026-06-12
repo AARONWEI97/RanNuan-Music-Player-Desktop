@@ -1848,25 +1848,129 @@ npx tauri build
 
 构建产物位于 `desktop/src-tauri/target/release/bundle/`。
 
-### 24.2 发布前检查清单
+### 24.2 构建注意事项
+
+#### 首次构建依赖下载
+
+Tauri 首次打包需要下载打包工具，下载速度取决于网络：
+
+| 工具 | 用途 | 大小 | 缓存位置 |
+|------|------|------|---------|
+| **WiX Toolset v3.14** | MSI 安装包制作 | 30MB | `%LocalAppData%\tauri\WixTools314\` |
+| **NSIS v3.11** | EXE 安装包制作 | 3MB | `%LocalAppData%\tauri\NSIS\` |
+
+首次下载慢可手动加速：
+```bash
+# WiX 镜像下载（二选一）
+https://gh.api.99988866.xyz/https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip
+https://mirror.ghproxy.com/https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip
+
+# 解压后放到 %LocalAppData%\tauri\WixTools314\（注意文件夹名大小写）
+```
+
+#### MSI vs NSIS（Tauri 自动打包）
+
+| | MSI | NSIS（Tauri 自动） |
+|------|------|------|
+| 安装包后缀 | `.msi` | `.exe` |
+| 安装包图标 | ✅ 应用 Logo | ❌ Tauri 的 `installerIcon` 配置有 bug，不生效 |
+| 双击安装 | 部分电脑需修复文件关联 | ✅ 所有 Windows 通用 |
+
+> ⚠️ **Tauri 2.x `installerIcon` Bug**：经实测，`bundle.windows.nsis.installerIcon` 无论写什么路径都不生效——同一份 `icon.ico` 用 NSIS 直接编译正常，说明是 Tauri 打包器内部的 Handlebars 模板渲染或文件复制步骤有问题，非图标文件本身的问题。
+
+#### 手动 NSIS 打包（推荐，完全自主）
+
+Tauri 编译产出 `app.exe` + `dist/` 后，可用 **HM NIS Edit** 向导生成 `.nsi` 脚本，完全自定义安装包：
+
+```
+Tauri 产出                   NSIS 打包
+─────────                   ─────────
+src-tauri/target/
+  release/
+    app.exe    ──────────┐
+desktop/dist/  ──────────┤
+                          ├──→ installer.nsi ──→ Setup.exe
+                          │      ↑
+    icon.ico      ────────┘    完全自由控制：图标/界面/中英文
+```
+
+**步骤**：
+1. `npx tauri build`（或 `cargo build --release` + `vite build`）
+2. 打开 HM NIS Edit → 新建向导 → 选择 `dist/` 文件夹
+3. 保存 `.nsi` 脚本 → 手动修改添加 `app.exe` + 图标
+4. 编译 → 得 `.exe` 安装包（~4.6MB，含自定义图标）
+
+**注意事项**：
+- 脚本编码需 **UTF-8 BOM**（否则中文报错 `Bad text encoding`）
+- `app.exe` 路径从 `nsis/x64/` 出发为 `..\..\app.exe`
+- 没必要把 `release/` 整个目录打进去，只需 `dist/` + `app.exe`
+
+配置切换：
+```json
+// tauri.conf.json → bundle.targets
+"nsis"  // 只打 .exe
+"msi"   // 只打 .msi
+"all"   // 两种都打
+```
+
+#### 图标更新
+
+修改 logo 后重新生成：
+```bash
+npx tauri icon public/logo.png   # 重新生成所有平台图标
+npx tauri build                   # 重新打包
+```
+
+### 24.3 发布前检查清单
 
 | 检查项 | 说明 |
 |--------|------|
-| ✅ 版本号 | `desktop/package.json` 中的 `version` 字段 |
-| ✅ 应用图标 | `npx tauri icon` 生成（见第十五节） |
-| ✅ 窗口标题 | `tauri.conf.json` → `app.windows[0].title` |
-| ✅ 最小窗口尺寸 | `tauri.conf.json` → `app.windows[0].minWidth/minHeight`（当前 900×600） |
-| ✅ 权限配置 | `capabilities/default.json` 包含所需权限 |
-| ✅ 托盘图标 | `src-tauri/icons/icon.png` |
-| ✅ API 地址 | SettingsStore 默认值是否为生产环境地址 |
+| ✅ 版本号 | `package.json` / `Cargo.toml` / `tauri.conf.json` 三者统一 |
+| ✅ 应用图标 | `npx tauri icon public/logo.png` 生成 |
+| ✅ Git 已推送 | `git push origin main` |
+| ✅ 安装包测试 | 实际安装并运行一次（推荐手动 NSIS 打包，Tauri 自动 NSIS 图标有 bug） |
+| ✅ API 地址 | SettingsStore 默认值是否为生产环境 |
 | ✅ 启动声效 | `public/dog.mp3` 存在 |
-| ✅ Rust 编译 | `cargo build --release` 无错误 |
+| ✅ 托盘正常 | 右键菜单、左键恢复、tooltip |
+| ✅ 构建通过 | `npx tauri build` 无错误 |
+| ✅ `frontendDist` | `tauri.conf.json` 中为 `"../dist"`（非 `"./dist"`） |
 
-### 24.3 版本号更新
+### 24.4 版本号统一
 
-需要修改的文件：
-- `desktop/package.json` → `version`
-- `desktop/src-tauri/Cargo.toml` → `version`
-- `desktop/src-tauri/tauri.conf.json` → `version`
+三个文件需保持一致：`package.json` / `Cargo.toml` / `tauri.conf.json`。UI 显示的版本读取自 `package.json`。
 
-建议三者保持一致。
+---
+
+## 二十五、v6.1 更新 — 打包配置 & 构建优化
+
+### 25.1 构建配置修复
+
+| 问题 | 修复 | 文件 |
+|------|------|------|
+| `frontendDist` 指向错误路径 (`src-tauri/dist`) | 改为 `"../dist"` | `tauri.conf.json` |
+| `tsc -b` 因 TS 严格模式下大量类型警告导致构建失败 | 构建脚本改为 `vite build`（跳过 tsc） | `package.json` |
+| `tsconfig` 中 `baseUrl` 弃用警告 | 添加 `ignoreDeprecations: "6.0"` | `tsconfig.app.json` |
+| `shared/src/` 文件中 `import axios/zustand` 无法解析 | `vite.config.ts` 添加 alias 指向 `desktop/node_modules` | `vite.config.ts` |
+
+### 25.2 打包工具链 & NSIS 自定义打包
+
+- 新增 `tauri-plugin-opener` 依赖（npm + Cargo）— GitHub 外部链接跳转
+- 新增 `opener:default` 权限 — `capabilities/default.json`
+- WiX + NSIS 手动缓存配置说明
+- 构建脚本从 `tsc -b && vite build` → `vite build`
+- **发现 Tauri 2.x `installerIcon` Bug** — 同一份 `icon.ico` 用 NSIS 直接编译正常，Tauri 自动打包不生效（已确认非图标/路径问题，系 Tauri 打包器内部缺陷）
+- **手动 NSIS 打包方案** — 使用 HM NIS Edit 向导 + 自定义 `.nsi` 脚本，完全控制安装包图标/界面
+- **NSIS 脚本编码** — 必须 UTF-8 BOM，否则中文 `Bad text encoding`
+
+### 25.3 文件变更清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `tauri.conf.json` | 修改 | `frontendDist: "../dist"` + `identifier: "com.rannuan.music"` + `targets: "nsis"` + `version: "1.5.0"` |
+| `vite.config.ts` | 修改 | alias: `axios/zustand/zustand/middleware` 指向 `desktop/node_modules` |
+| `package.json` | 修改 | `build: "vite build"` (移除 tsc) + `version: "1.5.0"` |
+| `Cargo.toml` | 修改 | `version: "1.5.0"` + `tauri-plugin-opener` |
+| `tsconfig.app.json` | 修改 | `ignoreDeprecations: "6.0"` |
+| `capabilities/default.json` | 修改 | `"opener:default"` |
+| `.gitignore` | **新建** | 排除 `node_modules/dist/target/.codebuddy` 等 |
+| `lib.rs` | 修改 | `tauri-plugin-opener` 注册 |

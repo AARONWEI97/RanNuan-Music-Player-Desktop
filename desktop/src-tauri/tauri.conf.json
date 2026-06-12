@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +38,23 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "publisher": "RanNuan Music Team",
+    "copyright": "Copyright © 2026 RanNuan Music",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "wix": {
+        "language": "zh-CN"
+      },
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installerIcon": "icon.ico",
+        "installMode": "currentUser",
+        "languages": ["SimpChinese"],
+        "compression": "lzma"
+      }
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }
