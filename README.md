@@ -89,7 +89,9 @@
 |:---:|
 | ![宇宙相册](/desktop/screenshots/universe.png) |
 
-> 📸 截图请放入 `desktop/screenshots/` 目录后自行替换
+### 🎬 演示视频
+
+<video src="desktop/screenshots/demo.mp4" controls width="100%" poster="desktop/screenshots/home.png"></video>
 
 ---
 
