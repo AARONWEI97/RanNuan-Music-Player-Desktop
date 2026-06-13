@@ -91,7 +91,7 @@
 
 ### 🎬 演示视频
 
-<video src="desktop/screenshots/demo.mp4" controls width="100%" poster="desktop/screenshots/home.png"></video>
+<video src="https://github.com/AARONWEI97/RanNuan-Music-Player-Desktop/raw/main/desktop/screenshots/demo.mp4" controls width="100%" poster="https://github.com/AARONWEI97/RanNuan-Music-Player-Desktop/raw/main/desktop/screenshots/home.png"></video>
 
 ---
 
