@@ -170,7 +170,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto p-6 pb-24">
+        <main className="flex-1 overflow-y-auto p-6 pb-24 relative">
           {children}
         </main>
       </div>

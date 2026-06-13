@@ -18,6 +18,7 @@ import CommentHistoryPage from './pages/CommentHistoryPage'
 import HeatmapPage from './pages/HeatmapPage'
 import DownloadPage from './pages/DownloadPage'
 import PlaylistImportPage from './pages/PlaylistImportPage'
+import UniversePage from './pages/UniversePage'
 
 export default function AppRoutes() {
   return (
@@ -41,6 +42,7 @@ export default function AppRoutes() {
       <Route path="/heatmap" element={<HeatmapPage />} />
       <Route path="/download" element={<DownloadPage />} />
       <Route path="/playlist-import" element={<PlaylistImportPage />} />
+      <Route path="/universe" element={<UniversePage />} />
     </Routes>
   )
 }

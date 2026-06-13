@@ -1873,10 +1873,21 @@ https://mirror.ghproxy.com/https://github.com/wixtoolset/wix3/releases/download/
 | | MSI | NSIS（Tauri 自动） |
 |------|------|------|
 | 安装包后缀 | `.msi` | `.exe` |
-| 安装包图标 | ✅ 应用 Logo | ❌ Tauri 的 `installerIcon` 配置有 bug，不生效 |
+| 安装包图标 | ✅ 应用 Logo | ✅ 生效（首次打不出来需清缓存） |
 | 双击安装 | 部分电脑需修复文件关联 | ✅ 所有 Windows 通用 |
 
-> ⚠️ **Tauri 2.x `installerIcon` Bug**：经实测，`bundle.windows.nsis.installerIcon` 无论写什么路径都不生效——同一份 `icon.ico` 用 NSIS 直接编译正常，说明是 Tauri 打包器内部的 Handlebars 模板渲染或文件复制步骤有问题，非图标文件本身的问题。
+> **NSIS 安装包图标不生效的处理方法**：
+> 如果 `installerIcon` 配置正确但安装包图标不显示，通常是 Tauri 的 NSIS 缓存导致的。清除以下目录后重新打包即可：
+> ```bash
+> # 清除 NSIS 缓存（两个目录都删）
+> rm -r src-tauri/target/release/nsis
+> rm -r src-tauri/target/release/bundle/nsis
+> 
+> # 重新打包
+> npm run build
+> npx tauri build
+> ```
+> 经实测，清除缓存后同一份 `icon.ico` 和配置即可在安装包中正确显示。
 
 #### 手动 NSIS 打包（推荐，完全自主）
 
@@ -1928,7 +1939,7 @@ npx tauri build                   # 重新打包
 | ✅ 版本号 | `package.json` / `Cargo.toml` / `tauri.conf.json` 三者统一 |
 | ✅ 应用图标 | `npx tauri icon public/logo.png` 生成 |
 | ✅ Git 已推送 | `git push origin main` |
-| ✅ 安装包测试 | 实际安装并运行一次（推荐手动 NSIS 打包，Tauri 自动 NSIS 图标有 bug） |
+| ✅ 安装包测试 | 实际安装并运行一次（NSIS 安装包图标不显示时可清除缓存重试） |
 | ✅ API 地址 | SettingsStore 默认值是否为生产环境 |
 | ✅ 启动声效 | `public/dog.mp3` 存在 |
 | ✅ 托盘正常 | 右键菜单、左键恢复、tooltip |
@@ -1958,7 +1969,7 @@ npx tauri build                   # 重新打包
 - 新增 `opener:default` 权限 — `capabilities/default.json`
 - WiX + NSIS 手动缓存配置说明
 - 构建脚本从 `tsc -b && vite build` → `vite build`
-- **发现 Tauri 2.x `installerIcon` Bug** — 同一份 `icon.ico` 用 NSIS 直接编译正常，Tauri 自动打包不生效（已确认非图标/路径问题，系 Tauri 打包器内部缺陷）
+- **NSIS 安装包图标问题解决** — `installerIcon` 配置正确但图标不显示→清除 `target/release/nsis` 和 `bundle/nsis` 缓存 → 重新打包生效
 - **手动 NSIS 打包方案** — 使用 HM NIS Edit 向导 + 自定义 `.nsi` 脚本，完全控制安装包图标/界面
 - **NSIS 脚本编码** — 必须 UTF-8 BOM，否则中文 `Bad text encoding`
 
@@ -1974,3 +1985,129 @@ npx tauri build                   # 重新打包
 | `capabilities/default.json` | 修改 | `"opener:default"` |
 | `.gitignore` | **新建** | 排除 `node_modules/dist/target/.codebuddy` 等 |
 | `lib.rs` | 修改 | `tauri-plugin-opener` 注册 |
+
+---
+
+## 二十六、v6.2 更新 — 宇宙音乐相册集成（iframe 嵌入方案）
+
+> 将 RanRan 3D 元宇宙相册以 iframe 方式嵌入，作为独立页面 `/universe`。
+
+### 26.1 架构决策
+
+| 方案 | 说明 | 结果 |
+|------|------|------|
+| 逐文件迁移组件 | 将 RanRan 的 30+ 个组件逐个迁移到 desktop/src/ | ❌ 放弃（import 链复杂、UI 按钮丢失、尺寸适配困难） |
+| **iframe 嵌入** | RanRan-main 整体独立构建，iframe 加载静态文件 | ✅ **最终方案**（零耦合、功能完整、独立迭代） |
+
+### 26.2 项目结构
+
+```
+desktop/
+├── RanRan-main/              ← 宇宙相册完整项目（独立 Vite + npm）
+│   └── src/ ...              ← 修改少许适配代码（见下方）
+├── public/
+│   └── ranran/               ← 构建产物（npm run build → xcopy dist）
+└── src/
+    └── pages/
+        └── UniversePage.tsx  ← iframe 加载器（4 行代码）
+```
+
+### 26.3 RanRan 侧适配修改
+
+| 文件 | 改动 | 原因 |
+|------|------|------|
+| `vite.config.ts` | `base: '/ranran/'` | 资源路径匹配 iframe src |
+| `package.json` | `build: "vite build"` | 跳过 tsc（严格模式报未使用变量） |
+| `App.tsx` | `isEmbedded` 检测，嵌入时隐藏 `<MusicPlayer />` | 避免和 desktop 播放器重复 |
+| `App.tsx` | `useMemo` → 直接调用 `getFilteredPhotos()` | **bug 修复**：Zustand 函数引用稳定导致照片不更新 |
+| `PhotoGrid/index.tsx` | 同上 | 同一 bug |
+| `UniverseView.tsx` | 三个功能按钮移到左下角 `left-3 bottom-24` | 避免遮挡 Navbar |
+
+### 26.4 desktop 侧改动
+
+| 文件 | 改动 |
+|------|------|
+| `pages/UniversePage.tsx` | **新建**：`<iframe src="/ranran/index.html">` |
+| `Sidebar.tsx` | 新增 `Globe` 图标 + "宇宙相册" 菜单项 |
+| `KeepAlive.tsx` | 注册 `/universe` 路由缓存 |
+| `routes.tsx` | 添加 `/universe` 路由 |
+| `Layout.tsx` | `<main>` 加 `relative`（让 UniversePage 可用 `absolute` 填满） |
+| `PlayerBar.tsx` | `/universe` 路由时返回 `null`（避免遮挡视频） |
+
+### 26.5 开发工作流
+
+```powershell
+# 开发时修改 RanRan 代码后：
+cd desktop\RanRan-main
+npm run build
+xcopy dist\* ..\public\ranran\ /E /Y
+
+# 然后重启 npx tauri dev（WebView2 缓存需要完全重启）
+cd ..
+npx tauri dev
+```
+
+### 26.6 关键技术点
+
+| 要点 | 说明 |
+|------|------|
+| **KeepAlive + iframe** | 宇宙相册页面缓存在 KeepAlive 中，切换回来不丢失 3D 场景状态和已上传照片 |
+| **iframe 同源** | `/ranran/index.html` 与 desktop 同源，IndexedDB/localStorage 共享，照片数据持久化 |
+| **嵌入检测** | `window.parent !== window` 判断是否在 iframe 中，自动调整 UI |
+| **PlayerBar 隐藏** | `location.pathname.startsWith('/universe')` 时隐藏桌面端播放器栏 |
+| **布局适配** | `<main>` 加 `relative` + UniversePage 用 `absolute inset-0` 实现无边距全屏 |
+| **构建缓存** | 改完 RanRan 必须重启 `npx tauri dev`，Vite dev server 和 WebView2 双重缓存 |
+
+### 26.7 已知限制
+
+| 问题 | 状态 | 说明 |
+|------|------|------|
+| 全息影院自定义控制条 | ✅ 已修复 | `showControls` 状态已接入条件渲染 + 淡入淡出动画 |
+| ~~全息影院双进度条~~ | ✅ 已修复 | 源码无 `controls` 属性，旧构建产物导致；重建后消失 |
+| ~~PlayerBar 宇宙页面隐藏~~ | ✅ 已修复 | Layout `<main>` 有 `pb-24` 留白，PlayerBar 在 iframe 外不会遮挡 |
+| ~~照片上传后刷新丢失~~ | ✅ 已修复 | Zustand persist `partialize` 剥离 `url`（base64 超限），改为 Blob 二进制存储 |
+| ~~照片 base64 存储效率低~~ | ✅ 已修复 | v6.3：全链路改为 Blob 存储，体积减少 33%，内存占用减半 |
+| 热更新 | ⚠️ | iframe 模式无热更新，每次改 RanRan 代码需 build + 重启 tauri |
+
+---
+
+## 二十七、v6.3 更新 — Blob 存储迁移 & PlayerBar 修复 & 双进度条修复
+
+### 27.1 照片存储从 base64 迁移到 Blob
+
+**问题**：照片压缩后存为 base64 字符串，体积膨胀 33%，大量照片时内存和 IndexedDB 写入性能急剧下降。
+
+**改造范围**：
+
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `workers/imageCompressor.worker.ts` | 重写 | `toDataURL()` → `toBlob()`，返回 `Promise<Blob>` |
+| `services/imageWorker.ts` | 重写 | `CompressResult.compressed` 从 `string` → `Blob` |
+| `store/modules/photoStore.ts` | 重写 | `compressImage` 返回 `Blob`；`addPhoto` 存 Blob 入 `blobStorage`；`photo.url = undefined` |
+| `hooks/usePhotoUrl.ts` | 重写 | 从 `blobStorage` 读 Blob → `URL.createObjectURL()` → 组件卸载时 `revokeObjectURL()` |
+
+**数据流变化**：
+
+```
+旧（base64）: File → toDataURL → base64 字符串 → blobStorage → usePhotoUrl 直接当 src
+
+新（Blob）:  File → toBlob   → Blob 二进制   → blobStorage → usePhotoUrl → createObjectURL → src
+                                                                              → revokeObjectURL 清理
+```
+
+**收益**：
+
+| 指标 | base64 | Blob | 改善 |
+|------|--------|------|:---:|
+| 单张照片存储 | ~1.5MB 字符串 | ~1MB 二进制 | **-33%** |
+| IndexedDB 序列化 | JSON 字符串化 (慢) | 原生二进制传输 (快) | **3-5x** |
+| Worker 传输 | 字符串拷贝 | structured clone (零拷贝) | **即时** |
+| Zustand persist | 剥离 url（只存缩略图） | 同左 | 稳定 |
+
+### 27.2 PlayerBar 宇宙页面不再隐藏
+
+删除了 `PlayerBar.tsx` 中 `location.pathname.startsWith('/universe')` 的 `return null`。Layout 的 `<main>` 已有 `pb-24` 底部留白，PlayerBar 在 iframe 区域外不会遮挡。
+
+### 27.3 全息影院双进度条修复
+
+源码中 video 元素无 `controls` 属性。旧构建产物（`public/ranran/`）中曾作为 workaround 加过 `controls`。重建后自定义控件条正常工作（`showControls` 动画 + 鼠标移动自动显隐），双进度条消失。

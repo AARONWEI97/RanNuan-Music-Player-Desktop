@@ -3,25 +3,26 @@
 </p>
 
 <h1 align="center">RanNuan Music Player</h1>
-<p align="center"><strong>冉暖音乐播放器 · 桌面端</strong></p>
+<p align="center"><strong>冉暖音乐播放器 · 桌面端 + 3D 元宇宙相册</strong></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tauri-2.11-orange?logo=tauri" />
   <img src="https://img.shields.io/badge/React-19.2-61DAFB?logo=react" />
   <img src="https://img.shields.io/badge/Vite-8.0-646CFF?logo=vite" />
   <img src="https://img.shields.io/badge/Zustand-5.0-blue" />
+  <img src="https://img.shields.io/badge/Three.js-R3F-black?logo=threedotjs" />
   <img src="https://img.shields.io/badge/license-MIT-green" />
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-1.3.0-e60026" />
-  <img src="https://img.shields.io/github/stars/AARONWEI97/RanNuan-Music-Player-Desktop?style=social" />
+  <img src="https://img.shields.io/badge/desktop-v1.5.0-e60026" />
+  <img src="https://img.shields.io/badge/ranran-v6.2-00ffff" />
 </p>
 
 ---
 
-> 🎵 一款基于 Tauri 2.x + React 19 + Vite 8 的跨平台桌面音乐播放器，支持多音源解析、系统托盘快捷控制、播放会话持久化、启动动画等完整功能。
+> 🎵 一款基于 Tauri 2.x + React 19 + Vite 8 的跨平台桌面音乐播放器。内置 **ranran (冉冉) 3D 元宇宙相册**，将照片化为宇宙行星，搭配全息影院、情绪音乐推荐等沉浸式体验。
 
 ---
 
@@ -56,6 +57,18 @@
 - **下载记录** — Zustand persist，最多 100 条
 - **歌单导入** — 链接 / 文本两种模式
 
+### 🌌 宇宙相册 (RanRan) — v6.2 集成
+- **3D 太阳系视图** — 照片映射为行星模型，轨道公转 + 自转
+- **银河螺旋臂** — 4 臂螺旋按时间排列照片行星，2400 粒子渲染
+- **沉浸元宇宙背景** — React Three Fiber 粒子场 + 星云 + Bloom 后处理
+- **全息影院** — 赛博朋克风格视频播放器，支持多视频列表切换
+- **时光穿梭** — 按年份浏览照片，全屏沉浸式回忆视图
+- **情绪音乐推荐** — 根据照片时间/标签自动分析情绪匹配音乐
+- **6 种主题 + 5 种渐变** — 赛博蓝/霓虹粉/矩阵绿/落日橙/星河紫/暗黑深渊
+- **本地优先架构** — IndexedDB 存储照片/视频/音乐，离线可用
+- **iframe 嵌入** — RanRan 独立构建，`/universe` 路由零耦合集成
+- **KeepAlive 缓存** — 切换页面不丢失 3D 场景状态和已上传照片
+
 ---
 
 ## 🖼 截图
@@ -72,7 +85,11 @@
 |:---:|:---:|
 | ![托盘](/desktop/screenshots/tray.png) | ![迷你](/desktop/screenshots/mini-player.png) |
 
-> 📸 截图请放入 `screenshots/` 目录后自行替换
+| 宇宙相册 |
+|:---:|
+| ![宇宙相册](/desktop/screenshots/universe.png) |
+
+> 📸 截图请放入 `desktop/screenshots/` 目录后自行替换
 
 ---
 
@@ -146,23 +163,26 @@ npx tauri build
 ```
 desktop/
 ├── src/
-│   ├── main.tsx                       # React 入口（setStorageAdapter + StrictMode）
+│   ├── main.tsx                       # React 入口
 │   ├── App.tsx                        # 根组件（主题同步 + 托盘事件 + splash + session恢复）
 │   ├── components/
 │   │   ├── layout/                    # 全局布局
 │   │   │   ├── Layout.tsx            # 主骨架（Sidebar + 主内容 + PlayerBar）
-│   │   │   ├── Sidebar.tsx           # 导航栏（流光 Logo + 主题切换 + 用户头像）
+│   │   │   ├── Sidebar.tsx           # 导航栏（流光 Logo + 主题切换 + 用户头像 + 宇宙相册入口）
 │   │   │   ├── TitleBar.tsx          # 自定义标题栏（Logo + 版本号 + 关闭→托盘）
-│   │   │   ├── PlayerBar.tsx         # 底部播放器（进度条/音量/速率/收藏/歌词）
+│   │   │   ├── PlayerBar.tsx         # 底部播放器（进度条/音量/速率/收藏/歌词，宇宙页面自动隐藏）
 │   │   │   ├── MiniPlayer.tsx        # 迷你播放器
-│   │   │   ├── KeepAlive.tsx         # 路由级缓存
+│   │   │   ├── KeepAlive.tsx         # 路由级 + Tab 级缓存（含宇宙相册页）
 │   │   │   └── ...
 │   │   └── common/                   # 通用组件
 │   │       ├── SplashScreen.tsx       # 启动动画（马卡龙配色 + 3D Logo + 狗叫）
 │   │       ├── CommentSection.tsx     # 全局评论（热门/最新 + 抱抱 + 楼层回复）
 │   │       ├── SongRow.tsx           # 歌曲列表行（纯组件 + memo）
 │   │       └── ...
-│   ├── pages/                        # 19 个页面组件
+│   ├── pages/                        # 20 个页面组件
+│   │   ├── HomePage.tsx              # 首页（Banner轮播/推荐歌单/热门歌手）
+│   │   ├── UniversePage.tsx          # ★ 宇宙相册页面（iframe 加载 /ranran/index.html）
+│   │   └── ...
 │   ├── services/
 │   │   ├── audioService.ts           # 音频引擎（playSong + autoPlay参数）
 │   │   ├── sessionManager.ts         # 会话持久化（localStorage直写）
@@ -175,11 +195,21 @@ desktop/
 │   │   ├── main.rs                   # Tauri 主进程
 │   │   └── lib.rs                    # 应用构建（托盘菜单/事件/tooltip/下载）
 │   ├── capabilities/default.json     # 权限配置
-│   └── tauri.conf.json               # Tauri 配置（1100×800/Logo/打包）
+│   └── tauri.conf.json               # Tauri 配置（1100×800）
 ├── public/
 │   ├── logo.png                      # 应用图标
-│   └── dog.mp3                       # 启动声效
-└── DESKTOP_DEV.md                    # 完整开发文档
+│   ├── dog.mp3                       # 启动声效
+│   └── ranran/                       # ★ RanRan 宇宙相册构建产物（npm run build → xcopy dist）
+├── DESKTOP_DEV.md                    # 完整桌面端开发文档（26 节）
+└── RanRan-main/                      # ★ RanRan 源码项目（不上传 GitHub，见 .gitignore）
+    └── PROJECT_DOC.md                # RanRan 独立项目文档（8 节）
+
+shared/                               # 多端共享核心包
+└── src/
+    ├── api/                          # API 请求层
+    ├── store/                        # 共享状态（playerStore / playlistStore / settingsStore）
+    ├── types/                        # 类型定义
+    └── utils/                        # 工具函数
 ```
 
 ---
@@ -194,8 +224,62 @@ desktop/
 | `Ctrl + K` | 聚焦搜索框 |
 | `Ctrl + Shift + S` | 全局搜索弹窗 |
 | `Esc` | 关闭弹窗/抽屉 |
-| 媒体键 ▶⏸️ | 系统级播放 / 暂停 |
-| 媒体键 ⏭️ / ⏮️ | 系统级上 / 下一首 |
+| `Ctrl+U` | 上传照片（宇宙相册） |
+| `← / →` | 上一张 / 下一张照片（全息查看器） |
+
+---
+
+## 🌌 宇宙相册 (RanRan)
+
+独立的 3D 元宇宙相册项目，通过 iframe 嵌入到音乐播放器中。侧边栏点击「宇宙相册」即可进入。
+
+### 技术亮点
+
+| 技术 | 用途 |
+|------|------|
+| **React Three Fiber** | 3D 场景渲染（行星/恒星/星系） |
+| **@react-three/postprocessing** | Bloom / Vignette 后处理特效 |
+| **IndexedDB (idb)** | 照片/视频/音乐本地持久化 |
+| **Web Worker** | 照片上传压缩，主线程零卡顿 |
+| **InstancedMesh** | 小行星带批量渲染，Draw Call 爆降 |
+| **三级 LOD** | 行星表面按摄像机距离动态切换纹理精度 |
+
+### 嵌入架构
+
+```
+desktop/src/pages/UniversePage.tsx
+  └── <iframe src="/ranran/index.html">
+        └── RanRan 构建产物 (public/ranran/)
+              └── index.html + JS/CSS bundles
+```
+
+- **同源策略**：iframe 与 desktop 同源，IndexedDB/localStorage 共享，数据互通
+- **KeepAlive 缓存**：切换回宇宙页面不丢失 3D 场景状态
+- **PlayerBar 智能隐藏**：宇宙页面自动隐藏桌面端播放器栏，避免遮挡
+
+### 开发工作流
+
+```powershell
+# 修改 RanRan 代码后：
+cd desktop\RanRan-main
+npm run build
+xcopy dist\* ..\public\ranran\ /E /Y
+
+# 重启 Tauri（WebView2 缓存需完全重启）
+cd ..
+npx tauri dev
+```
+
+> 📖 完整文档：[desktop/DESKTOP_DEV.md §二十六](desktop/DESKTOP_DEV.md) | [RanRan PROJECT_DOC.md](desktop/RanRan-main/PROJECT_DOC.md)
+
+---
+
+## 📖 文档
+
+| 文档 | 路径 | 说明 |
+|------|------|------|
+| **桌面端开发文档** | [`desktop/DESKTOP_DEV.md`](desktop/DESKTOP_DEV.md) | 26 节完整文档：项目结构/共享层/功能清单/快捷键/路由/性能优化/下载系统/宇宙相册集成 |
+| **RanRan 项目文档** | [`desktop/RanRan-main/PROJECT_DOC.md`](desktop/RanRan-main/PROJECT_DOC.md) | 8 节完整文档：核心特性/技术栈/目录结构/架构治理/6 个 Phase 开发路线图 |
 
 ---
 

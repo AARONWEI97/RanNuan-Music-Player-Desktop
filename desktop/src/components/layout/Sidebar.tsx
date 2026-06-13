@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '@shared'
 import { useAuthStore } from '@/store/authStore'
 import { thumbUrl } from '@/utils/image'
-import { Home, Search, Library, Heart, Settings, Sun, Moon, Clock, HardDrive, Trophy, LogIn, LogOut, User, Download, Coffee } from 'lucide-react'
+import { Home, Search, Library, Heart, Settings, Sun, Moon, Clock, HardDrive, Trophy, LogIn, LogOut, User, Download, Coffee, Globe } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: '首页', icon: Home },
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/history', label: '最近播放', icon: Clock },
   { to: '/local', label: '本地音乐', icon: HardDrive },
   { to: '/download', label: '下载管理', icon: Download },
+  { to: '/universe', label: '宇宙相册', icon: Globe },
 ]
 
 export default function Sidebar() {

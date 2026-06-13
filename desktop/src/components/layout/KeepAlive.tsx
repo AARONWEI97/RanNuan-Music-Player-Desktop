@@ -23,6 +23,7 @@ const HeatmapPage = lazy(() => import('../../pages/HeatmapPage'))
 const DownloadPage = lazy(() => import('../../pages/DownloadPage'))
 const DonationPage = lazy(() => import('../../pages/DonationPage'))
 const PlaylistImportPage = lazy(() => import('../../pages/PlaylistImportPage'))
+const UniversePage = lazy(() => import('../../pages/UniversePage'))
 
 // 非缓存路由（每次重新挂载）
 const PlaylistPage = lazy(() => import('../../pages/PlaylistPage'))
@@ -53,6 +54,7 @@ const CACHED_ROUTES: Array<{
   { path: '/download', component: DownloadPage, match: 'exact' },
   { path: '/playlist-import', component: PlaylistImportPage, match: 'exact' },
   { path: '/donation', component: DonationPage, match: 'exact' },
+  { path: '/universe', component: UniversePage, match: 'exact' },  // ★ 宇宙相册
   { path: '^/user/', component: UserPage, match: 'regex' },  // ★ /user/:id 缓存
 ]
 

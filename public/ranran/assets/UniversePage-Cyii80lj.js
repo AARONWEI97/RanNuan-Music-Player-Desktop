@@ -1,0 +1,1 @@
+import{u as e}from"./index-BmSbDrAL.js";var t=e();function n(){return(0,t.jsx)(`div`,{className:`absolute inset-0 bg-[#050508]`,children:(0,t.jsx)(`iframe`,{src:`/ranran/index.html`,className:`w-full h-full border-0`})})}export{n as default};

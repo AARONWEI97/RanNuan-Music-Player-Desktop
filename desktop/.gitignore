@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 宇宙相册源码项目（仅构建产物 public/ranran/ 需要上传）
+RanRan-main/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
