@@ -1,4 +1,4 @@
-import axios, { type AxiosRequestConfig, type AxiosResponse, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosResponse, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { getStorageAdapter } from '../storageAdapter';
 
 declare const __DEV__: boolean | undefined;
@@ -9,6 +9,7 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
   noRetry?: boolean;
   silent?: boolean;
+  skipAuthCookie?: boolean;
 }
 
 let apiBaseUrl = DEFAULT_API_BASE_URL;
@@ -46,15 +47,21 @@ request.interceptors.request.use(
     try {
       const adapter = getStorageAdapter();
       const token = await adapter.getItem(TOKEN_KEY);
-      if (token && !token.startsWith('uid:')) {
+      if (token && !token.startsWith('uid:') && !config.skipAuthCookie) {
         const cookieWithOs = `${token} os=pc;`;
         if (config.method !== 'post') {
           config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : cookieWithOs;
         } else if (config.method === 'post') {
-          config.data = {
-            ...config.data,
-            cookie: cookieWithOs,
-          };
+          if (config.data instanceof FormData) {
+            if (!config.data.has('cookie')) {
+              config.data.append('cookie', cookieWithOs);
+            }
+          } else {
+            config.data = {
+              ...config.data,
+              cookie: cookieWithOs,
+            };
+          }
         }
       }
     } catch (e) {

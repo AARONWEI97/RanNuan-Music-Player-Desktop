@@ -16,7 +16,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/desktop-v1.5.0-e60026" />
+  <img src="https://img.shields.io/badge/desktop-v2.0.0-e60026" />
   <img src="https://img.shields.io/badge/ranran-v6.2-00ffff" />
 </p>
 
@@ -38,8 +38,13 @@
 
 ### 🎨 界面
 - **首页轮播** — Banner + 推荐歌单 + 热门歌手 + 新碟上架
-- **搜索页** — 防抖建议 + 热搜卡片 + 搜索历史 + 键盘导航
-- **歌曲详情页** — 毛玻璃 + 黑胶唱片动画 + 歌词/评论/相似推荐
+- **搜索页** — 防抖建议 + 热搜卡片 + 搜索历史 + 歌曲/歌手/专辑/歌单/用户/MV/歌词/电台/视频搜索
+- **歌曲详情页** — 毛玻璃 + 黑胶唱片动画 + 音乐百科 + 完整歌词/评论/相似推荐，支持 tab 深链
+- **音乐库** — 歌单广场 / 歌手 / 新碟上架 / MV 精选 / 电台 / 排行榜
+- **歌单管理** — 新建歌单、收藏/取消收藏歌单、自己创建的歌单可删除歌曲
+- **MV 详情页** — MV 播放、清晰度切换、评论和相关 MV 推荐
+- **视频详情页** — 视频搜索结果播放、清晰度切换、评论和相关视频推荐
+- **电台详情页** — 热门电台入口 + 电台节目列表 + 节目播放
 - **右键菜单** — 10 项完整操作（播放/收藏/下载/删除/评论/相似…）
 - **深色模式** — iOS 风格 toggle 开关 + 系统主题同步
 - **启动动画** — 3s 马卡龙配色 + 3D Logo 浮动 + 🐶 狗狗叫声
@@ -48,7 +53,7 @@
 - **系统托盘** — 右键菜单：播放/暂停 + 上/下一首 + 实时歌曲 tooltip
 - **全局快捷键** — 播放/暂停/上/下一首 + Ctrl+L 歌词 + Ctrl+K 搜索
 - **迷你模式** — 窗口缩小至 360×72，悬浮桌面
-- **桌面歌词** — Ctrl+D 悬浮歌词 + 拖拽 + 透明背景
+- **桌面歌词** — Ctrl+D 悬浮歌词 + 拖拽 + 透明背景 + 翻译/罗马音展示
 - **下载管理** — 并发队列 + 进度弹窗 + 打开文件夹
 
 ### 📂 数据管理
@@ -67,7 +72,7 @@
 - **6 种主题 + 5 种渐变** — 赛博蓝/霓虹粉/矩阵绿/落日橙/星河紫/暗黑深渊
 - **本地优先架构** — IndexedDB 存储照片/视频/音乐，离线可用
 - **iframe 嵌入** — RanRan 独立构建，`/universe` 路由零耦合集成
-- **KeepAlive 缓存** — 切换页面不丢失 3D 场景状态和已上传照片
+- **离页卸载** — 离开宇宙相册时卸载 iframe，释放 WebGL/GPU/动画后台占用
 
 ---
 
@@ -172,17 +177,20 @@ desktop/
 │   │   │   ├── Layout.tsx            # 主骨架（Sidebar + 主内容 + PlayerBar）
 │   │   │   ├── Sidebar.tsx           # 导航栏（流光 Logo + 主题切换 + 用户头像 + 宇宙相册入口）
 │   │   │   ├── TitleBar.tsx          # 自定义标题栏（Logo + 版本号 + 关闭→托盘）
-│   │   │   ├── PlayerBar.tsx         # 底部播放器（进度条/音量/速率/收藏/歌词，宇宙页面自动隐藏）
+│   │   │   ├── PlayerBar.tsx         # 底部播放器（进度条/音量/速率/收藏/歌词）
 │   │   │   ├── MiniPlayer.tsx        # 迷你播放器
 │   │   │   ├── KeepAlive.tsx         # 路由级 + Tab 级缓存（含宇宙相册页）
 │   │   │   └── ...
 │   │   └── common/                   # 通用组件
 │   │       ├── SplashScreen.tsx       # 启动动画（马卡龙配色 + 3D Logo + 狗叫）
-│   │       ├── CommentSection.tsx     # 全局评论（热门/最新 + 抱抱 + 楼层回复）
+│   │       ├── CommentSection.tsx     # 全局评论（热门/最新 + 抱抱 + 楼层回复 + 平滑展开/收起）
 │   │       ├── SongRow.tsx           # 歌曲列表行（纯组件 + memo）
 │   │       └── ...
-│   ├── pages/                        # 20 个页面组件
+│   ├── pages/                        # 页面组件
 │   │   ├── HomePage.tsx              # 首页（Banner轮播/推荐歌单/热门歌手）
+│   │   ├── DjPage.tsx                # 电台详情（电台信息 + 节目列表 + 播放）
+│   │   ├── MvPage.tsx                # MV详情（播放 + 清晰度 + 评论 + 相关MV）
+│   │   ├── VideoPage.tsx             # 视频详情（播放 + 清晰度 + 评论 + 相关视频）
 │   │   ├── UniversePage.tsx          # ★ 宇宙相册页面（iframe 加载 /ranran/index.html）
 │   │   └── ...
 │   ├── services/
@@ -202,7 +210,7 @@ desktop/
 │   ├── logo.png                      # 应用图标
 │   ├── dog.mp3                       # 启动声效
 │   └── ranran/                       # ★ RanRan 宇宙相册构建产物（npm run build → xcopy dist）
-├── DESKTOP_DEV.md                    # 完整桌面端开发文档（26 节）
+├── DESKTOP_DEV.md                    # 完整桌面端开发文档
 └── RanRan-main/                      # ★ RanRan 源码项目（不上传 GitHub，见 .gitignore）
     └── PROJECT_DOC.md                # RanRan 独立项目文档（8 节）
 
@@ -256,8 +264,8 @@ desktop/src/pages/UniversePage.tsx
 ```
 
 - **同源策略**：iframe 与 desktop 同源，IndexedDB/localStorage 共享，数据互通
-- **KeepAlive 缓存**：切换回宇宙页面不丢失 3D 场景状态
-- **PlayerBar 智能隐藏**：宇宙页面自动隐藏桌面端播放器栏，避免遮挡
+- **离页卸载**：`/universe` 不保留挂载，离开页面即释放 iframe 后台动画、WebGL 和内存占用
+- **PlayerBar 布局隔离**：Layout 底部预留留白，宇宙页 iframe 不会遮挡桌面端播放器栏
 
 ### 开发工作流
 
@@ -280,14 +288,14 @@ npx tauri dev
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| **桌面端开发文档** | [`desktop/DESKTOP_DEV.md`](desktop/DESKTOP_DEV.md) | 26 节完整文档：项目结构/共享层/功能清单/快捷键/路由/性能优化/下载系统/宇宙相册集成 |
+| **桌面端开发文档** | [`desktop/DESKTOP_DEV.md`](desktop/DESKTOP_DEV.md) | 桌面端完整文档：项目结构/共享层/功能清单/快捷键/路由/性能优化/下载系统/宇宙相册集成/近期修复 |
 | **RanRan 项目文档** | [`desktop/RanRan-main/PROJECT_DOC.md`](desktop/RanRan-main/PROJECT_DOC.md) | 8 节完整文档：核心特性/技术栈/目录结构/架构治理/6 个 Phase 开发路线图 |
 
 ---
 
 ## 🔌 API 服务
 
-本项目依赖 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 提供音乐数据接口，默认 API 地址为内置服务器。可在「设置 → 播放」中自定义 API 地址。
+本项目依赖网易云音乐 API 服务提供音乐数据接口，当前开发对照 `NeteaseCloudMusicApiEnhanced.txt`。可在「设置」中自定义 API 地址。密码/验证码登录若返回“网络环境存在风险”，通常与网易云风控、API 服务部署 IP 或代理环境有关，推荐优先使用二维码登录或自建可信 API 服务。
 
 ---
 

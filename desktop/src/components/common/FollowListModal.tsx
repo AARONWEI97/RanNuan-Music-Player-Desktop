@@ -28,6 +28,10 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
   const [error, setError] = useState('')
   const selfUid = useAuthStore(s => s.profile?.userId || 0)
 
+  if (open && tab !== initialTab) {
+    setTab(initialTab)
+  }
+
   const fetch = useCallback(async () => {
     if (!uid) return
     setLoading(true)
@@ -35,26 +39,23 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
     try {
       let users: UserItem[] = []
       if (tab === 'follows') {
-        const res: any = await getUserFollows(uid, 100, 0)
+        const res = await getUserFollows(uid, 100, 0) as { data?: { follow?: UserItem[]; data?: { follow?: UserItem[] } } }
         users = res?.data?.follow || res?.data?.data?.follow || []
       } else {
-        const res: any = await getUserFollowers(uid, 100, 0)
+        const res = await getUserFollowers(uid, 100, 0) as { data?: { followeds?: UserItem[]; data?: { followeds?: UserItem[] } } }
         users = res?.data?.followeds || res?.data?.data?.followeds || []
       }
       setList(Array.isArray(users) ? users : [])
-    } catch (e: any) {
-      setError(e?.message || '加载失败')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '加载失败')
     } finally {
       setLoading(false)
     }
   }, [uid, tab])
 
   useEffect(() => {
-    if (open) {
-      setTab(initialTab)
-      fetch()
-    }
-  }, [open, initialTab, fetch])
+    if (open) fetch()
+  }, [open, fetch])
 
   const handleFollow = async (item: UserItem) => {
     try {
@@ -63,8 +64,8 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
         u.userId === item.userId ? { ...u, followed: !u.followed } : u
       ))
       showToast(item.followed ? '已取消关注' : '已关注')
-    } catch (e: any) {
-      showToast('操作失败', e?.message)
+    } catch (e: unknown) {
+      showToast('操作失败', e instanceof Error ? e.message : '未知错误')
     }
   }
 
@@ -85,7 +86,7 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
           <div className="flex gap-1 p-0.5 rounded-full bg-gray-100 dark:bg-white/[0.06]">
             {tabs.map(t => (
               <button key={t.k}
-                onClick={() => { setTab(t.k); fetch() }}
+                onClick={() => setTab(t.k)}
                 className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
                   tab === t.k ? 'bg-white dark:bg-gray-700 text-[#e60026] shadow-sm' : 'text-gray-500 dark:text-gray-400'
                 }`}>{t.l}</button>

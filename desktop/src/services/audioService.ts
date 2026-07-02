@@ -237,9 +237,9 @@ function setupAudioListeners() {
 
     // ★ 音源降级链：netease → kugou → kuwo → migu → bodian
     const FALLBACK_ORDER = ['kugou', 'kuwo', 'migu', 'bodian']
-    const tried = (currentSong as any)._audioFailedSources || []
+    const tried = (currentSong._audioFailedSources as string[] | undefined) || []
     tried.push((currentSong.source as string) || 'netease')
-    ;(currentSong as any)._audioFailedSources = tried
+    currentSong._audioFailedSources = tried
 
     const nextSource = FALLBACK_ORDER.find(s => !tried.includes(s))
     if (nextSource) {
@@ -248,9 +248,9 @@ function setupAudioListeners() {
         const url = await musicParser.parseMusicWithSource(currentSong.id, currentSong, quality, nextSource)
         if (url) {
           console.log(`[Audio] 🔄 切换到 ${nextSource}: ${currentSong.name}`)
-          ;(currentSong.source as any) = nextSource
+          ;(currentSong.source as string | undefined) = nextSource
           currentSong.playMusicUrl = url
-          ;(currentSong as any).expiredAt = Date.now() + 24 * 60 * 60 * 1000
+          currentSong.expiredAt = Date.now() + 24 * 60 * 60 * 1000
           usePlayerStore.setState({ playMusicUrl: url })
           const a = getAudio()
           a.src = url
@@ -262,7 +262,9 @@ function setupAudioListeners() {
           preloadNextSong()
           return
         }
-      } catch {}
+      } catch {
+        // 当前音源切换失败，继续走下方切歌逻辑
+      }
       // 当前源失败 → 延迟后重试下一个（避免循环触发 error）
       setTimeout(() => {
         const song = usePlaylistStore.getState().getCurrentSong()
@@ -275,7 +277,7 @@ function setupAudioListeners() {
     }
 
     // 所有音源都失败 → 切下一首
-    delete (currentSong as any)._audioFailedSources
+    delete currentSong._audioFailedSources
     const failCount = usePlaylistStore.getState().incrementFailCount()
     if (failCount >= 5) {
       showToast('连续播放失败，已停止')
@@ -307,6 +309,17 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
   // ★ Increment generation — any in-flight playSong with older generation will abort
   const thisGeneration = ++playGeneration;
   cancelRetryTimer(); // P1-9: 取消之前的重试
+
+  // 切歌时先停掉当前音频，避免旧歌继续播放到新 URL 解析完成
+  if (autoPlay) {
+    const a = getAudio();
+    if (!a.paused || a.src) {
+      a.pause();
+      a.removeAttribute('src');
+      a.load();
+    }
+    updateMediaSessionPlaybackState(false);
+  }
 
   player.setIsLoading(true);
   player.setPlayMusic(song);
@@ -358,7 +371,7 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
     // Resolve URL
     let url = song.playMusicUrl;
     if (!url) {
-      url = await parseMusicUrl(song.id, song, musicQuality);
+      url = (await parseMusicUrl(song.id, song, musicQuality)) ?? undefined
     }
 
     // ★ Check generation after async operation

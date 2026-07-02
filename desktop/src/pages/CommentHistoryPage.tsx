@@ -265,7 +265,7 @@ export default function CommentHistoryPage() {
 
       // batch-fetch missing song details
       const missingIds: number[] = []
-      normalized.forEach(c => {
+      normalized.forEach((c: CommentItem) => {
         if (c.resourceType === 'song' && c.resourceId > 0 && !c.resourcePic && c.resourceName === '加载中…') {
           missingIds.push(c.resourceId)
         }
@@ -282,12 +282,16 @@ export default function CommentHistoryPage() {
             }
             return c
           }))
-        }).catch(() => {})
+        }).catch(() => {
+          // ignore batch detail failures
+        })
       }
-    } catch { } finally {
+    } catch {
+      // ignore comment history fetch errors
+    } finally {
       setLoading(false); setLoadingMore(false)
     }
-  }, [profile?.userId])
+  }, [profile])
 
   useEffect(() => {
     if (!isLoggedIn || !profile?.userId) { setLoading(false); return }

@@ -1,4 +1,4 @@
-import { useRef, createContext, useContext, type ReactNode, lazy, Suspense } from 'react'
+import { useState, createContext, useContext, type ReactNode, lazy, Suspense } from 'react'
 import { useLocation, Routes, Route } from 'react-router-dom'
 
 /**
@@ -32,12 +32,16 @@ const AlbumPage = lazy(() => import('../../pages/AlbumPage'))
 const SongDetailPage = lazy(() => import('../../pages/SongDetailPage'))
 const SongCommentPage = lazy(() => import('../../pages/SongCommentPage'))
 const UserPage = lazy(() => import('../../pages/UserPage'))
+const DjPage = lazy(() => import('../../pages/DjPage'))
+const MvPage = lazy(() => import('../../pages/MvPage'))
+const VideoPage = lazy(() => import('../../pages/VideoPage'))
 
 // ─── 缓存配置 ───
 const CACHED_ROUTES: Array<{
   path: string
-  component: React.ComponentType<any>
+  component: React.ComponentType
   match: 'exact' | 'prefix' | 'regex'
+  keepMounted?: boolean
 }> = [
   { path: '/', component: HomePage, match: 'exact' },
   { path: '/search', component: SearchPage, match: 'exact' },
@@ -54,7 +58,8 @@ const CACHED_ROUTES: Array<{
   { path: '/download', component: DownloadPage, match: 'exact' },
   { path: '/playlist-import', component: PlaylistImportPage, match: 'exact' },
   { path: '/donation', component: DonationPage, match: 'exact' },
-  { path: '/universe', component: UniversePage, match: 'exact' },  // ★ 宇宙相册
+  // 宇宙相册包含独立 iframe + WebGL/R3F 场景，离开页面时卸载 iframe 释放后台动画和 GPU/内存。
+  { path: '/universe', component: UniversePage, match: 'exact', keepMounted: false },
   { path: '^/user/', component: UserPage, match: 'regex' },  // ★ /user/:id 缓存
 ]
 
@@ -64,6 +69,9 @@ const DYNAMIC_ROUTES = [
   { path: '/playlist/:id', component: PlaylistPage },
   { path: '/artist/:id', component: ArtistPage },
   { path: '/album/:id', component: AlbumPage },
+  { path: '/dj/:id', component: DjPage },
+  { path: '/mv/:id', component: MvPage },
+  { path: '/video/:id', component: VideoPage },
   { path: '/song/:id', component: SongDetailPage },
 ]
 
@@ -82,9 +90,11 @@ export function useIsActive(): boolean {
  *   <TabCache active={tab === 'all'}><AllTab  /></TabCache>
  */
 export function TabCache({ active, children }: { active: boolean; children: ReactNode }) {
-  const everMounted = useRef(false)
-  if (active) everMounted.current = true
-  if (!everMounted.current) return null
+  const [everMounted, setEverMounted] = useState(active)
+  if (active && !everMounted) {
+    setEverMounted(true)
+  }
+  if (!everMounted) return null
   return (
     <KeepAliveContext.Provider value={active}>
       <div style={{ display: active ? undefined : 'none' }}>{children}</div>
@@ -100,7 +110,17 @@ const PageFallback = () => (
 )
 
 // ─── 缓存槽：首次激活后挂载，之后只切换 display ───
-function CachedSlot({ cacheKey, match, children }: { cacheKey: string; match: 'exact' | 'prefix' | 'regex'; children: ReactNode }) {
+function CachedSlot({
+  cacheKey,
+  match,
+  keepMounted = true,
+  children
+}: {
+  cacheKey: string
+  match: 'exact' | 'prefix' | 'regex'
+  keepMounted?: boolean
+  children: ReactNode
+}) {
   const location = useLocation()
   let isActive = false
   if (match === 'exact') isActive = location.pathname === cacheKey
@@ -109,9 +129,12 @@ function CachedSlot({ cacheKey, match, children }: { cacheKey: string; match: 'e
     // cacheKey is a regex pattern like "^/user/"
     isActive = new RegExp(cacheKey).test(location.pathname)
   }
-  const everMounted = useRef(false)
-  if (isActive) everMounted.current = true
-  if (!everMounted.current) return null
+  const [everMounted, setEverMounted] = useState(isActive)
+  if (isActive && !everMounted) {
+    setEverMounted(true)
+  }
+  if (!isActive && !keepMounted) return null
+  if (!everMounted) return null
 
   return (
     <KeepAliveContext.Provider value={isActive}>
@@ -134,8 +157,8 @@ export function KeepAliveRoutes() {
   return (
     <>
       {/* 缓存页面：永不销毁，切换 display */}
-      {CACHED_ROUTES.map(({ path, component: Comp, match }) => (
-        <CachedSlot key={path} cacheKey={path} match={match}>
+      {CACHED_ROUTES.map(({ path, component: Comp, match, keepMounted }) => (
+        <CachedSlot key={path} cacheKey={path} match={match} keepMounted={keepMounted}>
           <Suspense fallback={<PageFallback />}>
             <Comp />
           </Suspense>

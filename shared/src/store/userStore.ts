@@ -5,14 +5,9 @@ import { TOKEN_KEY } from '../api/request';
 import {
   getUserAccount,
   getUserPlaylist,
-  getUserSubcount,
-  getUserLevel,
   followUser,
   getUserCreatePlaylist,
   getUserCollectPlaylist,
-  getUserSocialStatus,
-  getUserBinding,
-  getFollowMixed,
 } from '../api/user';
 import { logout as apiLogout } from '../api/login';
 

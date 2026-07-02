@@ -1,11 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { getPlaylistDetail, getPlaylistTrackAll, type SongResult, usePlaylistStore } from '@shared'
+import { getPlaylistDetail, getPlaylistTrackAll, subscribePlaylist, updatePlaylistTracks, type SongResult, usePlaylistStore } from '@shared'
 import { playSong } from '@/services/audioService'
 import SongRow from '@/components/common/SongRow'
 import { useProgressiveRender } from '@/hooks/useProgressiveRender'
 import { coverUrl, thumbUrl } from '@/utils/image'
 import { Play, Heart, Headphones, Clock, Music2, ChevronLeft, Loader } from 'lucide-react'
+import { showToast } from '@/utils/toast'
+import { useAuthStore } from '@/store/authStore'
 
 function fmt(n: number) {
   if (!n) return '0'
@@ -26,6 +28,7 @@ function normalizeSong(s: any): SongResult {
     ar: s.ar || s.artists?.map((a: any) => ({ id: a.id, name: a.name })) || [],
     al: s.al || s.album || { id: 0, name: '', picUrl: '' },
     dt: s.dt || 0,
+    count: s.count ?? 0,
   }
 }
 
@@ -35,7 +38,10 @@ export default function PlaylistPage() {
   const [playlist, setPlaylist] = useState<any>(null)
   const [tracks, setTracks] = useState<SongResult[]>([])
   const [loading, setLoading] = useState(true)
+  const [subscribing, setSubscribing] = useState(false)
+  const profile = useAuthStore(s => s.profile)
   const { setPlayList, setPlayListIndex } = usePlaylistStore()
+  const isOwnPlaylist = Boolean(profile?.userId && playlist?.creator?.userId === profile.userId)
 
   // ★ 并行请求：metadata + 全量歌曲（与移动端对齐，limit=9999 一次性全拿）
   useEffect(() => {
@@ -67,6 +73,51 @@ export default function PlaylistPage() {
     setPlayList(tracks)
     setPlayListIndex(tracks.indexOf(song))
     playSong(song)
+  }
+  const handleSubscribe = async () => {
+    if (!playlist?.id || subscribing) return
+    const subscribed = Boolean(playlist.subscribed)
+    setSubscribing(true)
+    setPlaylist((prev: any) => prev ? {
+      ...prev,
+      subscribed: !subscribed,
+      subscribedCount: Math.max(0, (prev.subscribedCount || 0) + (subscribed ? -1 : 1)),
+    } : prev)
+    try {
+      await subscribePlaylist({ id: playlist.id, t: subscribed ? 2 : 1 })
+      showToast(subscribed ? '已取消收藏' : '已收藏', playlist.name)
+    } catch (e: any) {
+      setPlaylist((prev: any) => prev ? {
+        ...prev,
+        subscribed,
+        subscribedCount: Math.max(0, (prev.subscribedCount || 0) + (subscribed ? 1 : -1)),
+      } : prev)
+      showToast('操作失败', e?.message || '请稍后重试')
+    } finally {
+      setSubscribing(false)
+    }
+  }
+  const handleRemoveFromPlaylist = async (song: SongResult) => {
+    if (!playlist?.id || !isOwnPlaylist) return
+    const ok = window.confirm(`确定从歌单「${playlist.name}」中删除《${song.name}》吗？`)
+    if (!ok) return
+    const prevTracks = tracks
+    setTracks(prev => prev.filter(item => item.id !== song.id))
+    setPlaylist((prev: any) => prev ? {
+      ...prev,
+      trackCount: Math.max(0, (prev.trackCount || prevTracks.length) - 1),
+    } : prev)
+    try {
+      await updatePlaylistTracks({ op: 'del', pid: playlist.id, tracks: String(song.id) })
+      showToast('已从歌单删除', song.name)
+    } catch (e: any) {
+      setTracks(prevTracks)
+      setPlaylist((prev: any) => prev ? {
+        ...prev,
+        trackCount: prevTracks.length,
+      } : prev)
+      showToast('删除失败', e?.message || '请稍后重试')
+    }
   }
 
   return (
@@ -116,8 +167,14 @@ export default function PlaylistPage() {
               <button onClick={handlePlayAll} className="flex items-center gap-2 px-6 py-2.5 bg-[#e60026] text-white rounded-full text-sm font-semibold hover:bg-[#c4001f] hover:shadow-lg hover:shadow-[#e60026]/20 transition-all">
                 <Play className="w-4 h-4" /> 播放全部
               </button>
-              <button className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-full text-sm font-medium hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                <Heart className="w-4 h-4" /> 收藏
+              <button onClick={handleSubscribe} disabled={subscribing || !playlist?.id}
+                className={`flex items-center gap-2 px-5 py-2.5 border rounded-full text-sm font-medium transition-colors disabled:opacity-50 ${
+                  playlist?.subscribed
+                    ? 'border-[#e60026]/20 bg-[#e60026]/8 text-[#e60026] hover:bg-[#e60026]/12'
+                    : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}>
+                {subscribing ? <Loader className="w-4 h-4 animate-spin" /> : <Heart className={`w-4 h-4 ${playlist?.subscribed ? 'fill-current' : ''}`} />}
+                {playlist?.subscribed ? '已收藏' : '收藏'}
               </button>
             </div>
           </div>
@@ -139,7 +196,15 @@ export default function PlaylistPage() {
           <div className="text-center py-12 text-gray-400">暂无歌曲</div>
         ) : (
           renderedItems.map((song, idx) => (
-            <SongRow key={String(song.id)} song={song} index={idx} onPlay={() => handlePlayOne(song)} />
+            <SongRow
+              key={String(song.id)}
+              song={song}
+              index={idx}
+              onPlay={() => handlePlayOne(song)}
+              inOwnPlaylist={isOwnPlaylist}
+              playlistId={playlist?.id}
+              onRemoveFromPlaylist={handleRemoveFromPlaylist}
+            />
           ))
         )}
       </div>

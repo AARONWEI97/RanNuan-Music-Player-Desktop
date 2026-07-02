@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Heart, Zap, Star, ExternalLink, QrCode } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
@@ -41,21 +42,36 @@ function FluidBackground() {
 }
 
 /* ═══════════ Floating Hearts ═══════════ */
+function pseudoRandom(seed: number) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
 function FloatingHearts() {
+  const hearts = useMemo(() => Array.from({ length: 12 }, (_, i) => ({
+    left: `${pseudoRandom(i + 1) * 90 + 5}%`,
+    top: `${100 + pseudoRandom(i + 2) * 40}%`,
+    fontSize: `${pseudoRandom(i + 3) * 20 + 10}px`,
+    opacity: 0.1 + pseudoRandom(i + 4) * 0.3,
+    duration: 8 + pseudoRandom(i + 5) * 12,
+    delay: pseudoRandom(i + 6) * 8,
+    rotate: pseudoRandom(i + 7) * 360,
+  })), [])
+
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-      {Array.from({ length: 12 }).map((_, i) => (
+      {hearts.map((heart, i) => (
         <Heart
           key={i}
           className="absolute text-[#e60026]/10 dark:text-[#e60026]/08"
           style={{
-            left: `${Math.random() * 90 + 5}%`,
-            top: `${100 + Math.random() * 40}%`,
-            fontSize: `${Math.random() * 20 + 10}px`,
-            opacity: 0.1 + Math.random() * 0.3,
-            animation: `floatHeart ${8 + Math.random() * 12}s ease-in-out infinite`,
-            animationDelay: `${Math.random() * 8}s`,
-            transform: `rotate(${Math.random() * 360}deg)`,
+            left: heart.left,
+            top: heart.top,
+            fontSize: heart.fontSize,
+            opacity: heart.opacity,
+            animation: `floatHeart ${heart.duration}s ease-in-out infinite`,
+            animationDelay: `${heart.delay}s`,
+            transform: `rotate(${heart.rotate}deg)`,
           }}
         />
       ))}

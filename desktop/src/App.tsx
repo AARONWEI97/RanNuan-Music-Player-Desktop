@@ -29,6 +29,14 @@ function App() {
     checkLoginStatus()
   }, [checkLoginStatus])
 
+  useEffect(() => {
+    const blockNativeContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+    }
+    document.addEventListener('contextmenu', blockNativeContextMenu)
+    return () => document.removeEventListener('contextmenu', blockNativeContextMenu)
+  }, [])
+
   // ★ 启动时恢复上次播放会话（在 splash 期间后台执行）
   useEffect(() => {
     let retries = 0

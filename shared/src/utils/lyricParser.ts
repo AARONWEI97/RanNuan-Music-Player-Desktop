@@ -2,6 +2,23 @@ import type { ILyricText, IWordData, ApiLyric, MusicILyric } from '../types';
 
 const LRC_TIME_REGEX = /\[(\d{1,2}):(\d{1,2})([.:]\d{1,3})?\]/g;
 const YRC_WORD_REGEX = /<(\d+),(\d+)>/g;
+const NETEASE_YRC_LINE_REGEX = /^\[(\d+),(\d+)\]/;
+const NETEASE_YRC_WORD_REGEX = /\((\d+),(\d+),\d+\)([^()]*)/g;
+
+function parseCreditLine(line: string): { time: number; text: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const data = JSON.parse(trimmed);
+    const text = Array.isArray(data?.c)
+      ? data.c.map((item: any) => item?.tx || '').join('').trim()
+      : '';
+    if (!text) return null;
+    return { time: Number(data.t || 0), text };
+  } catch {
+    return null;
+  }
+}
 
 function parseTimeToMs(min: string, sec: string, ms: string): number {
   const minutes = parseInt(min, 10);
@@ -23,6 +40,12 @@ function parseStandardLrc(lrcString: string): { time: number; text: string }[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
+    const credit = parseCreditLine(trimmed);
+    if (credit) {
+      result.push(credit);
+      continue;
+    }
+
     const times: number[] = [];
     let match: RegExpExecArray | null;
     LRC_TIME_REGEX.lastIndex = 0;
@@ -38,6 +61,53 @@ function parseStandardLrc(lrcString: string): { time: number; text: string }[] {
     for (const time of times) {
       result.push({ time, text });
     }
+  }
+
+  result.sort((a, b) => a.time - b.time);
+  return result;
+}
+
+function parseNeteaseYrcLine(line: string): { time: number; text: string; words: IWordData[] } | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  const lineMatch = NETEASE_YRC_LINE_REGEX.exec(trimmed);
+  if (!lineMatch) {
+    const credit = parseCreditLine(trimmed);
+    return credit ? { ...credit, words: [] } : null;
+  }
+
+  const lineTime = parseInt(lineMatch[1], 10);
+  const contentPart = trimmed.slice(lineMatch[0].length);
+  const words: IWordData[] = [];
+  let fullText = '';
+  let match: RegExpExecArray | null;
+
+  NETEASE_YRC_WORD_REGEX.lastIndex = 0;
+  while ((match = NETEASE_YRC_WORD_REGEX.exec(contentPart)) !== null) {
+    const text = match[3] || '';
+    if (!text) continue;
+    words.push({
+      text,
+      startTime: parseInt(match[1], 10),
+      duration: parseInt(match[2], 10),
+    });
+    fullText += text;
+  }
+
+  const fallbackText = contentPart.replace(NETEASE_YRC_WORD_REGEX, '').trim();
+  const text = fullText.trim() || fallbackText;
+  if (!text) return null;
+  return { time: lineTime, text, words };
+}
+
+function parseNeteaseYrc(lrcString: string): { time: number; text: string; words: IWordData[] }[] {
+  const lines = lrcString.split('\n');
+  const result: { time: number; text: string; words: IWordData[] }[] = [];
+
+  for (const line of lines) {
+    const parsed = parseNeteaseYrcLine(line);
+    if (parsed) result.push(parsed);
   }
 
   result.sort((a, b) => a.time - b.time);
@@ -152,25 +222,62 @@ function matchTranslation(
 export function parseLyric(apiLyric: ApiLyric): MusicILyric | null {
   const lrcString = apiLyric?.lrc?.lyric;
   const klyricString = apiLyric?.klyric?.lyric;
+  const yrcString = apiLyric?.yrc?.lyric;
   const tlyricString = apiLyric?.tlyric?.lyric;
+  const romaString = apiLyric?.romalrc?.lyric;
 
-  if (!lrcString && !klyricString) return null;
+  if (!lrcString && !klyricString && !yrcString) return null;
 
   const translationMap = tlyricString
     ? parseTranslationLrc(tlyricString)
     : new Map<number, string>();
+  const romaMap = romaString
+    ? parseTranslationLrc(romaString)
+    : new Map<number, string>();
+
+  const yrcLines = yrcString ? parseNeteaseYrc(yrcString) : [];
+  if (yrcLines.length > 0) {
+    const lrcTimeArray: number[] = [];
+    const lrcArray: ILyricText[] = [];
+
+    for (const line of yrcLines) {
+      lrcTimeArray.push(line.time);
+      lrcArray.push({
+        text: line.text,
+        trText: matchTranslation(line.time, translationMap),
+        romaText: matchTranslation(line.time, romaMap),
+        words: line.words.length > 0 ? line.words : undefined,
+        hasWordByWord: line.words.length > 0,
+        startTime: line.time,
+        duration: 0,
+      });
+    }
+
+    for (let i = 0; i < lrcArray.length; i++) {
+      if (i < lrcArray.length - 1) {
+        lrcArray[i].duration = lrcTimeArray[i + 1] - lrcTimeArray[i];
+      }
+    }
+
+    return {
+      lrcTimeArray,
+      lrcArray,
+      hasWordByWord: lrcArray.some((line) => line.hasWordByWord),
+    };
+  }
 
   if (klyricString) {
-    const yrcLines = parseYrcLrc(klyricString);
-    if (yrcLines.length > 0) {
+    const klyricLines = parseYrcLrc(klyricString);
+    if (klyricLines.length > 0) {
       const lrcTimeArray: number[] = [];
       const lrcArray: ILyricText[] = [];
 
-      for (const line of yrcLines) {
+      for (const line of klyricLines) {
         lrcTimeArray.push(line.time);
         lrcArray.push({
           text: line.text,
           trText: matchTranslation(line.time, translationMap),
+          romaText: matchTranslation(line.time, romaMap),
           words: line.words.length > 0 ? line.words : undefined,
           hasWordByWord: line.words.length > 0,
           startTime: line.time,
@@ -204,6 +311,7 @@ export function parseLyric(apiLyric: ApiLyric): MusicILyric | null {
       lrcArray.push({
         text: line.text,
         trText: matchTranslation(line.time, translationMap),
+        romaText: matchTranslation(line.time, romaMap),
         hasWordByWord: false,
         startTime: line.time,
         duration: 0,

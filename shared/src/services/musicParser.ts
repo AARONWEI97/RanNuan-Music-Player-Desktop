@@ -87,7 +87,7 @@ class CustomApiStrategy implements MusicSourceStrategy {
   // 未配置自定义 API，暂时禁用
   enabled = false;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
     try {
       const customApiUrl = await getStorageAdapter().getItem('custom_api_url');
       if (!customApiUrl) {
@@ -128,7 +128,7 @@ class UnblockApiMatchStrategy implements MusicSourceStrategy {
   priority = 2;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
     // ★ 与服务器 unblock_test.html 支持的音源对齐
     // 服务器实际支持的 source: bodian, qq, migu, kugou, kuwo, pyncmd
     // bodian 实测有效，放第一位；不指定 source 的情况放最后作为兜底
@@ -163,7 +163,7 @@ class UnblockApiMatchStrategy implements MusicSourceStrategy {
   async parseWithSource(
     id: string | number,
     songData: SongResult,
-    quality: string,
+    _quality: string,
     forcedSource: string,
   ): Promise<string | null> {
     try {
@@ -197,7 +197,7 @@ class GDMusicStrategy implements MusicSourceStrategy {
   priority = 3;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
     try {
       const songName = songData.name || '';
       let artistNames = '';
@@ -375,7 +375,7 @@ class FallbackApiStrategy implements MusicSourceStrategy {
   priority = 6;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
     try {
       const songName = songData.name || '';
       let artistNames = '';

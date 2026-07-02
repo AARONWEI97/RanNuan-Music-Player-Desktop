@@ -1,5 +1,10 @@
 import request from './request';
 
+const loginRequestOptions = {
+  noRetry: true,
+  skipAuthCookie: true,
+} as any;
+
 export function getQrKey() {
   return request.get('/login/qr/key');
 }
@@ -13,21 +18,15 @@ export function checkQr(key: any) {
 }
 
 export function loginByCellphone(phone: string, password: string) {
-  return request.get('/login/cellphone', {
-    params: { phone, password, randomCNIP: true, realIP: '116.25.146.177' }
-  });
+  return request.post('/login/cellphone', { phone, password, randomCNIP: true }, loginRequestOptions);
 }
 
 export function loginByCaptcha(phone: string, captcha: string) {
-  return request.get('/login/cellphone', {
-    params: { phone, captcha, randomCNIP: true, realIP: '116.25.146.177' }
-  });
+  return request.post('/login/cellphone', { phone, captcha, randomCNIP: true }, loginRequestOptions);
 }
 
 export function loginByEmail(email: string, password: string) {
-  return request.get('/login', {
-    params: { email, password, randomCNIP: true, realIP: '116.25.146.177' }
-  });
+  return request.post('/login', { email, password, randomCNIP: true }, loginRequestOptions);
 }
 
 export function loginByUid(uid: string | number) {
@@ -38,25 +37,28 @@ export function loginByUid(uid: string | number) {
 
 export function registerAnonymous() {
   return request.get('/register/anonimous', {
-    params: { randomCNIP: true, realIP: '116.25.146.177' }
+    params: { randomCNIP: true },
+    ...loginRequestOptions,
   });
 }
 
 export function refreshLogin() {
   return request.get('/login/refresh', {
-    params: { randomCNIP: true, realIP: '116.25.146.177' }
+    params: { randomCNIP: true }
   });
 }
 
 export function sendCaptcha(phone: string, ctcode?: string) {
   return request.get('/captcha/sent', {
-    params: { phone, ctcode: ctcode || '86', randomCNIP: true, realIP: '116.25.146.177' }
+    params: { phone, ctcode: ctcode || '86', randomCNIP: true },
+    ...loginRequestOptions,
   });
 }
 
 export function verifyCaptcha(phone: string, captcha: string, ctcode?: string) {
   return request.get('/captcha/verify', {
-    params: { phone, captcha, ctcode: ctcode || '86', randomCNIP: true, realIP: '116.25.146.177' }
+    params: { phone, captcha, ctcode: ctcode || '86', randomCNIP: true },
+    ...loginRequestOptions,
   });
 }
 

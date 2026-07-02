@@ -71,23 +71,26 @@ desktop/
 │   │       └── SplashScreen.tsx   ← 启动动画（马卡龙配色 + 3D Logo + 狗狗叫声）
 │   │   └── player/
 │   │       └── SourceSelector.tsx  ← 音源选择弹窗（bodian/QQ/咪咕/酷狗/酷我/网易/GD 多音源切换）
-│   ├── pages/                ← 页面级组件（共 19 个）
+│   ├── pages/                ← 页面级组件
 │   │   ├── HomePage.tsx      ← 首页（Banner轮播/快捷入口/推荐歌单/热门歌手/新碟上架/推荐新歌）
 │   │   ├── SearchPage.tsx    ← 搜索页（防抖建议 + 热搜卡片 + 历史记录 + Ctrl+K 聚焦 + 键盘导航）
 │   │   ├── PlaylistPage.tsx  ← 歌单详情（渐变头图/封面/创建者/标签/统计/歌曲列表）
 │   │   ├── AlbumPage.tsx     ← 专辑详情（封面/歌手/歌曲列表）
 │   │   ├── ArtistPage.tsx    ← 歌手详情（头像/热门歌曲/热门专辑）
 │   │   ├── DailyRecommendPage.tsx ← 每日推荐详情（渐变头图/日期/历史日推/歌曲列表）
-│   │   ├── LibraryPage.tsx   ← 音乐库（歌单广场/歌手/新碟上架/MV精选/排行榜，5 个 TabCache）
+│   │   ├── LibraryPage.tsx   ← 音乐库（歌单广场/歌手/新碟上架/MV精选/电台/排行榜，6 个 TabCache）
 │   │   ├── FavoritesPage.tsx ← 我喜欢的音乐（收藏列表）
 │   │   ├── HistoryPage.tsx   ← 最近播放（播放历史，上限200首）
 │   │   ├── LocalMusicPage.tsx← 本地音乐（导入/IndexedDB持久化/封面匹配/播放本地音频文件）
 │   │   ├── SettingsPage.tsx  ← 设置页（API地址/音质/快捷键说明）
 │   │   ├── TopListPage.tsx   ← 排行榜页
-│   │   ├── UserPage.tsx      ← 用户详情页（Hero背景/7入口快捷菜单/创建+收藏+专辑+歌手Tab）
+│   │   ├── UserPage.tsx      ← 用户详情页（沉浸 Hero/自己与他人主页区分/创建+收藏+专辑+歌手+动态+电台Tab）
 │   │   ├── LoginPage.tsx     ← 登录页
-│   │   ├── SongDetailPage.tsx← 全屏播放页（毛玻璃+黑胶唱片+歌词/评论/相似三Tab）
+│   │   ├── SongDetailPage.tsx← 全屏播放页（毛玻璃+黑胶唱片+歌词/评论/相似三Tab+tab深链）
 │   │   ├── SongCommentPage.tsx← 独立歌曲评论页（/song/:id/comments 路由）
+│   │   ├── DjPage.tsx        ← 电台详情页（电台信息/节目列表/节目播放）
+│   │   ├── MvPage.tsx        ← MV 详情页（视频播放/清晰度/评论/相关 MV）
+│   │   ├── VideoPage.tsx     ← 视频详情页（视频播放/清晰度/评论/相关视频）
 │   │   ├── CommentHistoryPage.tsx ← 评论历史（时间线卡片+类型过滤+分页+删除+点赞）
 │   │   ├── HeatmapPage.tsx   ← 听歌热力图（年度月历网格/getMusicCalendar/深浅绿色渐变）
 │   │   ├── DownloadPage.tsx  ← 下载管理（Hero大图+grid列表+文件路径+打开文件夹按钮+进度弹窗）
@@ -177,7 +180,7 @@ desktop/
 - [x] `playNextQueue` 独立队列：右键「下一首播放」高优先级，消费后自动清除
 - [x] 音频错误自动 fallback：解码失败 / URL 过期 → 自动切下一首 + Toast
 - [x] 播放队列管理（添加/删除/清空/索引切换）
-- [x] 播放队列抽屉（右侧滑出，点击切歌、删除）
+- [x] 播放队列抽屉（右侧滑出，点击切歌、收藏/移除、局部 Popover 菜单、下一首播放）
 - [x] **原始播放列表恢复**（`originalPlayList` + `restoreOriginalOrder`，随机模式切回顺序时恢复原始顺序）
 - [x] **连续失败保护**（`consecutiveFailCount` + `MAX_FAILS=5`，连续播放失败超过阈值自动暂停，防止死循环）
 - [x] **列表结束自动暂停**（非循环模式下播完最后一首自动暂停，不自动回到开头）
@@ -209,11 +212,14 @@ desktop/
 
 ### 搜索页（SearchPage）
 - [x] 搜索框（圆角阴影 + 聚焦ring + 搜索建议下拉）
-- [x] 分类标签（歌曲/歌手/专辑/歌单，底部下划线指示器）
+- [x] 分类标签（歌曲/歌手/专辑/歌单/用户/MV/歌词/电台/视频）
 - [x] 歌曲结果（排名编号 + 封面 + 歌手 + 专辑 + 时长 + hover播放）
 - [x] 歌手结果（圆形头像卡片，hover放大）
 - [x] 专辑/歌单结果（卡片化，hover scale-110 + 播放按钮浮现 + 阴影上移）
 - [x] 歌单播放量角标（Headphones + backdrop-blur）
+- [x] 用户结果跳转 `/user/:id`，电台结果跳转 `/dj/:id`
+- [x] 歌词搜索结果可直接播放并展示歌词片段
+- [x] 搜索提交后取消旧建议请求，避免建议浮层遮挡结果
 
 ### 歌单详情页（PlaylistPage）
 - [x] 渐变头图背景（`from-[#e60026]/10`）
@@ -224,6 +230,15 @@ desktop/
 - [x] 歌曲列表（排名编号/前3名红色/封面/歌手/时长/hover播放按钮）
 - [x] **性能优化**：`getPlaylistTrackAll({ limit: 9999 })` 一次拿全量（不再 limit=50 分页），362 首歌秒加载
 - [x] **播放全部**：直接使用全量数据，无 50 首截断限制
+- [x] 收藏/取消收藏歌单：接入 `subscribePlaylist`，按钮状态和收藏数乐观更新
+- [x] 新建歌单：音乐库歌单广场提供入口，调用 `createPlaylist`，支持公开/私密
+- [x] 自建歌单删歌：歌单创建者右键歌曲可调用 `updatePlaylistTracks({ op: 'del' })` 删除
+
+### 电台（DJ）
+- [x] 音乐库新增「电台」Tab：调用 `/dj/hot` 加载热门电台，支持分页和渐进渲染
+- [x] 电台详情页 `/dj/:id`：展示电台封面、DJ、分类、简介、节目数、播放数
+- [x] 电台节目列表：调用 `getDjProgram` 分页加载
+- [x] 电台节目播放：按 API 文档使用节目 `mainTrackId/mainSong.id` 走现有 `playSong` 播放链路
 
 ### 每日推荐页（DailyRecommendPage）
 - [x] 渐变头图 + 大封面 + 日期角标
@@ -233,7 +248,7 @@ desktop/
 
 ### UI 布局
 - [x] 自定义标题栏（隐藏系统标题栏，最小化/最大化/关闭 + 自定义 Logo）
-- [x] 左侧导航栏（首页/搜索/排行榜/音乐库/我喜欢/最近播放/本地音乐/下载管理/设置 + 自定义 Logo + 用户/主题切换 + 深色模式 class 策略修复）
+- [x] 左侧导航栏（首页/搜索/排行榜/音乐库/我喜欢/最近播放/本地音乐/下载管理/宇宙相册/设置 + 自定义 Logo + 用户/主题切换 + 深色模式 class 策略修复）
 - [x] 底部播放器栏（歌曲信息/控制/拖拽进度条/hover时间预览/滚轮音量/静音切换/队列按钮/歌词按钮/音源切换/迷你模式/播放速率/收藏）
 - [x] 迷你播放器模式（Tauri 窗口缩放，360×72，窗口置顶，不可调整大小，点击恢复全窗口）
 - [x] 迷你播放器收藏/取消收藏（实时同步，Toast 反馈）
@@ -241,14 +256,16 @@ desktop/
 - [x] 迷你播放器可点击进度条（点击跳转 + 悬停时间预览）
 - [x] 迷你播放器播放列表展开（点击展开/收起，列表项切歌/删除）
 - [x] 播放列表展开时窗口动态变高（360×400）
-- [x] 歌曲详情页（点击底部播放器进入）
+- [x] 歌曲详情页（点击底部播放器进入，音乐百科/歌词/评论/相似 tab 支持 URL 深链）
+- [x] 歌曲详情页切歌后同步 URL，PlayBar 封面和返回按钮仍可一键关闭详情页
 
 ### 歌词
-- [x] 歌词弹窗面板（`Ctrl+L`，逐行高亮 + 自动滚动居中）
-- [x] 桌面悬浮歌词（`Ctrl+D`，可拖拽，透明背景，逐行高亮）
+- [x] 歌词解析支持 `lrc/tlyric/yrc/romalrc`，含翻译、罗马音和网易新版逐字歌词
+- [x] 歌词弹窗面板（`Ctrl+L`，逐行高亮 + 自动滚动居中 + 翻译/罗马音）
+- [x] 桌面悬浮歌词（`Ctrl+D`，可拖拽，透明背景，逐行高亮 + 翻译/罗马音）
 
 ### 搜索与导航
-- [x] 搜索页（关键词搜索 + 搜索建议）
+- [x] 搜索页（关键词搜索 + 搜索建议 + 9 类搜索 tab）
 - [x] 全局搜索弹窗（`Ctrl+Shift+S`，覆盖全屏的搜索面板）
 - [x] 歌手详情页（`/artist/:id`）
 - [x] 专辑详情页（`/album/:id`）
@@ -265,6 +282,8 @@ desktop/
 ### 交互
 - [x] 歌曲右键菜单（播放/下一首播放/收藏/歌手/专辑/下载）
 - [x] 歌曲三点菜单（`MoreHorizontal` 按钮，hover 浮现，与右键菜单共用同一套菜单项）
+- [x] 播放队列局部菜单（右键/三点打开行内 Popover；滚动、切歌、点击外部自动收起）
+- [x] 全局禁用 WebView 原生右键菜单（避免出现返回/刷新/打印/另存为）
 - [x] SongRow hover 操作（下一首播放按钮 + 收藏按钮 + 三点菜单按钮）
 - [x] Toast 通知（播放开始/收藏/下载等操作反馈）
 - [x] 自定义滚动条样式（light/dark 模式适配）
@@ -282,6 +301,9 @@ desktop/
 - [x] **启动动画**（Splash Screen：马卡龙流体背景 + 3D Logo + 狗狗叫声）
 
 ### 用户中心（UserPage 快捷菜单）
+- [x] 用户页沉浸式 Hero：背景图、头像、身份、等级、签名、关注/粉丝/动态/歌单统计重新分层
+- [x] 自己/他人主页区分：自己的主页显示个人工具入口和编辑资料；他人主页显示关注按钮，隐藏个人工具
+- [x] 用户页内容区升级：Tab 导航、歌单/专辑卡片、歌手卡片、动态卡片、听歌排行统一视觉层级
 - [x] 7 入口快捷菜单全部接入后端路由（收藏/历史/评论/本地/热力图/下载/导入）
 - [x] 评论历史页（时间线卡片 + `threadId` 解析 + `getMusicDetail` 批量补全歌曲信息）
 - [x] 听歌热力图页（年度月历网格，绿色深浅渐变，year 切换器）
@@ -320,16 +342,21 @@ desktop/
 | `/playlist/:id` | PlaylistPage | 歌单详情（渐变头图/封面/创建者/标签/统计/歌曲列表） |
 | `/album/:id` | AlbumPage | 专辑详情 |
 | `/artist/:id` | ArtistPage | 歌手详情（头像/热门歌曲/热门专辑） |
+| `/dj/:id` | DjPage | 电台详情（电台信息/节目列表/节目播放） |
+| `/mv/:id` | MvPage | MV 详情（播放/清晰度/评论/相关 MV） |
+| `/video/:id` | VideoPage | 视频详情（播放/清晰度/评论/相关视频） |
 | `/daily-recommend` | DailyRecommendPage | 每日推荐详情（渐变头图/日期/历史日推/歌曲列表） |
-| `/library` | LibraryPage | 音乐库（推荐音乐） |
+| `/library` | LibraryPage | 音乐库（歌单/歌手/专辑/MV/电台/排行榜） |
 | `/favorites` | FavoritesPage | 我喜欢的音乐（收藏列表） |
 | `/history` | HistoryPage | 最近播放（播放历史） |
 | `/local` | LocalMusicPage | 本地音乐（导入/IndexedDB持久化/封面匹配） |
 | `/settings` | SettingsPage | 设置（API/音质/快捷键） |
 | `/toplist` | TopListPage | 排行榜页 |
-| `/user/:id` | UserPage | 用户详情页（Hero背景/7入口快捷菜单/Tab内容） |
+| `/user/:id` | UserPage | 用户详情页（沉浸 Hero/个人工具/关注按钮/Tab内容） |
 | `/login` | LoginPage | 登录页 |
-| `/song/:id` | SongDetailPage | 歌曲详情页（大封面/播放控制） |
+| `/song/:id` | SongDetailPage | 歌曲详情页（大封面/播放控制/歌词评论相似 tab） |
+| `/song/:id?tab=similar` | SongDetailPage | 直达歌曲详情页相似推荐 tab |
+| `/song/:id?tab=comments` | SongDetailPage | 直达歌曲详情页评论 tab |
 | `/comment-history` | CommentHistoryPage | 评论历史（时间线卡片/getUserCommentHistory） |
 | `/heatmap` | HeatmapPage | 听歌热力图（月历网格/getMusicCalendar） |
 | `/download` | DownloadPage | 下载管理（localStorage任务列表） |
@@ -586,7 +613,7 @@ interface SongRowProps {
 | 层级 | 组件 | 说明 |
 |------|------|------|
 | **页面级** | `CachedSlot`（`KeepAlive.tsx`） | 14 个缓存页面首次访问后永不销毁，切走 `display:none`，回来 `display:block`。二次进入 0ms 显示 |
-| **Tab 级** | `TabCache`（`KeepAlive.tsx`） | LibraryPage 5 个 tab、ArtistPage 4 个 tab、UserPage 4 个 tab。切 tab 不销毁子组件，分页/滚动位置/已加载数据全保留 |
+| **Tab 级** | `TabCache`（`KeepAlive.tsx`） | LibraryPage 6 个 tab、ArtistPage 4 个 tab、UserPage 4 个 tab。切 tab 不销毁子组件，分页/滚动位置/已加载数据全保留 |
 
 **关键改动**：
 - `App.tsx`：`<AppRoutes />` → `<KeepAliveRoutes />`
@@ -652,7 +679,7 @@ URL 是唯一真相源，零 sync effect，零竞态。
 | **移除 StrictMode** | `main.tsx` 不再包裹 `<StrictMode>`，避免开发模式双重渲染 |
 | **SongRow SVG 恢复** | 三个按钮的 Unicode 字符恢复为完整 inline SVG（心形/列表加号/三点），带 hover 背景和 transition |
 | **封面图优化** | 所有网格卡片图片使用 `coverUrl()` 缩放 |
-| **LibraryPage 拆分重构** | 5 个 tab 拆为独立子组件 + `useCallback` 稳定 fetcher + 双 observer 合并（渐进渲染完才启用分页加载）+ 筛选切换不 reset |
+| **LibraryPage 拆分重构** | 6 个 tab 拆为独立子组件 + `useCallback` 稳定 fetcher + 双 observer 合并（渐进渲染完才启用分页加载）+ 筛选切换不 reset |
 
 ---
 
@@ -2029,10 +2056,10 @@ desktop/
 |------|------|
 | `pages/UniversePage.tsx` | **新建**：`<iframe src="/ranran/index.html">` |
 | `Sidebar.tsx` | 新增 `Globe` 图标 + "宇宙相册" 菜单项 |
-| `KeepAlive.tsx` | 注册 `/universe` 路由缓存 |
+| `KeepAlive.tsx` | 注册 `/universe` 路由，`keepMounted: false`，离开页面时卸载 iframe |
 | `routes.tsx` | 添加 `/universe` 路由 |
 | `Layout.tsx` | `<main>` 加 `relative`（让 UniversePage 可用 `absolute` 填满） |
-| `PlayerBar.tsx` | `/universe` 路由时返回 `null`（避免遮挡视频） |
+| `PlayerBar.tsx` | 不再隐藏；依赖 Layout 底部留白避免遮挡 |
 
 ### 26.5 开发工作流
 
@@ -2051,10 +2078,10 @@ npx tauri dev
 
 | 要点 | 说明 |
 |------|------|
-| **KeepAlive + iframe** | 宇宙相册页面缓存在 KeepAlive 中，切换回来不丢失 3D 场景状态和已上传照片 |
+| **iframe 离页卸载** | 宇宙相册包含 WebGL/R3F 场景，`KeepAlive` 对 `/universe` 使用 `keepMounted: false`，离开页面即释放后台动画、GPU 和内存占用 |
 | **iframe 同源** | `/ranran/index.html` 与 desktop 同源，IndexedDB/localStorage 共享，照片数据持久化 |
 | **嵌入检测** | `window.parent !== window` 判断是否在 iframe 中，自动调整 UI |
-| **PlayerBar 隐藏** | `location.pathname.startsWith('/universe')` 时隐藏桌面端播放器栏 |
+| **PlayerBar 布局隔离** | `Layout` 底部预留留白，`/universe` 页面不再主动隐藏播放器栏 |
 | **布局适配** | `<main>` 加 `relative` + UniversePage 用 `absolute inset-0` 实现无边距全屏 |
 | **构建缓存** | 改完 RanRan 必须重启 `npx tauri dev`，Vite dev server 和 WebView2 双重缓存 |
 
@@ -2068,6 +2095,7 @@ npx tauri dev
 | ~~照片上传后刷新丢失~~ | ✅ 已修复 | Zustand persist `partialize` 剥离 `url`（base64 超限），改为 Blob 二进制存储 |
 | ~~照片 base64 存储效率低~~ | ✅ 已修复 | v6.3：全链路改为 Blob 存储，体积减少 33%，内存占用减半 |
 | 热更新 | ⚠️ | iframe 模式无热更新，每次改 RanRan 代码需 build + 重启 tauri |
+| 离页状态保持 | ⚠️ | 为释放宇宙相册后台 WebGL/动画资源，离开 `/universe` 会卸载 iframe；再次进入会重新加载 RanRan，但 IndexedDB 数据仍保留 |
 
 ---
 
@@ -2111,3 +2139,103 @@ npx tauri dev
 ### 27.3 全息影院双进度条修复
 
 源码中 video 元素无 `controls` 属性。旧构建产物（`public/ranran/`）中曾作为 workaround 加过 `controls`。重建后自定义控件条正常工作（`showControls` 动画 + 鼠标移动自动显隐），双进度条消失。
+
+---
+
+## 二十八、v6.4 更新 — 桌面端功能补全 & UX 修复
+
+本轮主要对照 `NeteaseCloudMusicApiEnhanced.txt` 和桌面端实际页面入口，优先修复“已有入口但未闭环”的功能，并处理用户反馈的明显交互问题。
+
+### 28.1 电台功能补全
+
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `pages/DjPage.tsx` | 新增 | 电台详情页，展示电台信息、DJ、分类、简介、统计和节目列表 |
+| `components/layout/KeepAlive.tsx` | 修改 | 注册动态路由 `/dj/:id` |
+| `pages/LibraryPage.tsx` | 修改 | 音乐库新增「电台」Tab，调用 `/dj/hot` 展示热门电台 |
+| `pages/UserPage.tsx` | 既有入口打通 | 用户页收藏电台卡片可跳转 `/dj/:id` |
+
+**播放策略**：API 文档说明 `/dj/program` 返回的 `mp3Url` 可能无效，因此节目播放使用 `mainTrackId` 或 `mainSong.id` 归一化为 `SongResult`，继续走现有 `playSong` 和 `/song/url` 音源链路。
+
+### 28.2 评论模块 UX 修复
+
+| 问题 | 修复 |
+|------|------|
+| 查看楼层回复后，在底部点击「收起回复」会停留在底部 | 每条主评论保存 DOM ref，收起后滚回对应主评论附近 |
+| 展开回复时页面明显抖动 | 展开时先渲染骨架占位，并锁住主评论在视口中的相对位置 |
+| 收起回复瞬间消失 | 使用 `grid-template-rows` + opacity 做 200ms 收缩过渡，动画结束后再清理状态 |
+| 评论举报原因固定 | 举报弹层选择真实原因并传给 `reportComment` |
+| 回复数兼容不足 | 统一归一化 `showFloorCount/repliedCount/replyCount/showReplyCount/showFloorComment` |
+
+涉及文件：`components/common/CommentSection.tsx`
+
+### 28.3 歌曲详情页修复
+
+| 问题 | 修复 |
+|------|------|
+| 歌曲详情页任意 tab 滚到底部露出大块专辑色背景 | 背景层只覆盖顶部区域并渐隐到页面底色，根容器使用白/深色底色并裁剪横向溢出 |
+| `SongRow` 菜单「相似推荐」跳转后仍停留歌词 tab | `SongDetailPage` 读取 `?tab=similar/comments/lyrics`，tab 切换同步 URL |
+| 音源切换弹层被歌曲详情页压住 | `SourceSelector` 改为 portal 到 `document.body`，使用 fixed 定位和高 z-index |
+| 音乐百科信息空/像调试面板 | 按 `/song/wiki/summary` 真实结构解析曲风、标签、语种、BPM、影视、乐谱、乐评摘录，UI 改成音乐百科卡片 |
+| 详情页停留到下一首后，PlayBar 封面点击无效/返回需点两次 | 详情页监听当前播放歌曲变化并 `replace` 同步 `/song/:id`，PlayBar 关闭详情页不再依赖当前歌曲 ID |
+| 歌词展示不完整 | shared parser 支持 `yrc/romalrc`，详情页/歌词面板/桌面歌词展示翻译、罗马音和逐字歌词解析结果 |
+
+涉及文件：`pages/SongDetailPage.tsx`、`components/player/SourceSelector.tsx`、`shared/src/utils/lyricParser.ts`、`components/layout/LyricsPanel.tsx`、`components/layout/FloatingLyrics.tsx`
+
+### 28.4 搜索页补全
+
+| 功能 | 说明 |
+|------|------|
+| 搜索类型扩展 | 从歌曲/歌手/专辑/歌单扩展到用户、MV、歌词、电台、视频 |
+| 用户/电台跳转 | 用户结果进入 `/user/:id`，电台结果进入 `/dj/:id` |
+| 歌词搜索 | 歌词搜索结果沿用 `SongRow`，可直接播放并显示歌词片段 |
+| MV/视频结果 | MV 结果进入 `/mv/:id`，视频结果进入 `/video/:id`，均支持播放、评论和相关推荐 |
+| 搜索建议遮挡 | 搜索提交、清空、点击建议时取消旧 debounce 并通过版本号忽略晚返回的建议请求 |
+
+涉及文件：`pages/SearchPage.tsx`、`pages/MvPage.tsx`、`pages/VideoPage.tsx`、`components/layout/KeepAlive.tsx`
+
+### 28.5 播放栏与歌单修复
+
+| 问题 | 修复 |
+|------|------|
+| PlayBar 音量只能点击/滚轮，不支持拖拽 | 音量条加入 pointer drag 逻辑 |
+| 歌单详情「收藏」按钮无实际操作 | 接入 `subscribePlaylist`，支持收藏/取消收藏、按钮状态和收藏数乐观更新 |
+| 歌单管理缺基础入口 | 音乐库歌单广场新增「新建歌单」，支持公开/私密；自建歌单歌曲行右键可从歌单删除 |
+
+涉及文件：`components/layout/PlayerBar.tsx`、`pages/PlaylistPage.tsx`、`pages/LibraryPage.tsx`
+
+### 28.6 登录与 API 请求修复
+
+| 文件 | 改动 |
+|------|------|
+| `shared/src/api/request.ts` | 增加 `skipAuthCookie`，允许登录请求不携带旧 cookie |
+| `shared/src/api/login.ts` | 登录/验证码请求使用 POST，跳过 auth cookie，关闭 retry，移除固定 `realIP` |
+| `store/authStore.ts` | 登录校验失败时清理 token 并抛错 |
+| `pages/LoginPage.tsx` | 移除空 token fallback，风险提示更明确 |
+
+说明：手机密码/验证码登录提示“网络环境存在风险”通常来自网易云官方风控，和 API 服务部署 IP、代理环境、请求频率有关，应用侧不能稳定绕过。推荐二维码登录、Cookie 登录或自建可信 API 服务。
+
+### 28.7 用户页 / 热力图 / 关注列表修复
+
+| 文件 | 改动 |
+|------|------|
+| `pages/UserPage.tsx` | 其他用户页隐藏仅自己可见 tab，动态分页修复，背景 ref 渲染问题修复 |
+| `components/common/FollowListModal.tsx` | 修复关注/粉丝 tab 切换后仍请求旧 tab 的问题 |
+| `pages/HeatmapPage.tsx` | 增加错误态、重试、兼容多种 calendar 返回结构，禁用未来年份 |
+| `shared/src/api/user.ts` | `/user/event` 的 `lasttime` 使用 `??`，`/dj/sublist` 增加 offset |
+
+### 28.8 构建与验证状态
+
+| 命令 | 状态 | 说明 |
+|------|------|------|
+| `npm run build`（desktop） | ✅ 通过 | Vite 前端构建通过 |
+| `cargo check`（desktop/src-tauri） | ✅ 通过 | 已通过；此前 Tauri stale target 绝对路径问题通过 `cargo clean` 修复 |
+| `npm run lint` | ⚠️ 未通过 | 仍有历史遗留 lint 问题，主要来自旧代码/React 19 规则和 `any` 类型，不是本轮改动新增 |
+
+### 28.9 后续建议
+
+| 优先级 | 方向 | 说明 |
+|--------|------|------|
+| P1 | 歌单管理继续增强 | 已补创建歌单和自建歌单删歌；继续补改封面/描述/标签、歌单内添加歌曲、排序、收藏者列表 |
+| P2 | 评论覆盖更多资源 | MV/视频已接入通用评论；继续扩到电台、专辑、歌单详情页 |
+| P3 | 消息中心/云盘/云贝 | API 文档支持，但与核心播放链路关系较弱，可后置 |

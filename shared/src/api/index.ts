@@ -113,6 +113,7 @@ export {
   getDjDetail,
   getRecentDj,
   uploadAvatar,
+  parseAvatarUploadUrl,
 } from './user';
 
 export {
@@ -180,6 +181,15 @@ export {
   getAllMv,
   getMvDetail,
   getMvUrl,
+  getVideoGroupList,
+  getVideoCategoryList,
+  getVideoGroup,
+  getVideoTimelineAll,
+  getVideoTimelineRecommend,
+  getRelatedAllVideo,
+  getVideoDetail,
+  getVideoDetailInfo,
+  getVideoUrl,
 } from './mv';
 
 export {

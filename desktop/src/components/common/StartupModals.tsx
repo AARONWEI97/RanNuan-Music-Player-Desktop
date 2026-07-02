@@ -17,7 +17,9 @@ function getMeta(): StartupMeta | null {
 }
 
 function saveMeta(meta: StartupMeta) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)) } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)) } catch {
+    // ignore quota / private mode errors
+  }
 }
 
 /**

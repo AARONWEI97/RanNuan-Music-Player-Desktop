@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { usePlaylistStore, getMusicDetail } from '@shared'
 import { playSong } from '@/services/audioService'
-import { ArrowLeft, Play, Music, User } from 'lucide-react'
+import { ArrowLeft, Play, Music } from 'lucide-react'
 import CommentSection from '@/components/common/CommentSection'
-import { coverUrl, thumbUrl } from '@/utils/image'
+import { thumbUrl } from '@/utils/image'
 
 interface SongMeta {
   id: number

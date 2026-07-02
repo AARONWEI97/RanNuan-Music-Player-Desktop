@@ -43,9 +43,12 @@ export function usePaginatedList<T, P extends Record<string, unknown>>(
 
   // 用 ref 持有最新 fetcher/params，避免内联 fetcher 每帧变化导致 loadMore/refresh 引用抖动
   const fetcherRef = useRef(fetcher)
-  fetcherRef.current = fetcher
   const paramsRef = useRef(params)
-  paramsRef.current = params
+
+  useEffect(() => {
+    fetcherRef.current = fetcher
+    paramsRef.current = params
+  })
 
   // Use ref to avoid stale closures in loadMore
   const currentItemsRef = useRef<T[]>([])

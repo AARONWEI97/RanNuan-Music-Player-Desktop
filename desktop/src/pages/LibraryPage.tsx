@@ -3,20 +3,23 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getArtistList, getTopAlbum, getAllMv, getToplist,
   getPlaylistCategory,
+  createPlaylist,
   request,
 } from '@shared'
 import LoadMore from '@/components/common/LoadMore'
 import { usePaginatedList } from '@/hooks/usePaginatedList'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { useProgressiveRender } from '@/hooks/useProgressiveRender'
-import { avatarUrl, coverUrl, thumbUrl } from '@/utils/image'
+import { avatarUrl, coverUrl } from '@/utils/image'
 import { TabCache } from '@/components/layout/KeepAlive'
+import { useAuthStore } from '@/store/authStore'
+import { showToast } from '@/utils/toast'
 import {
   Search, Disc3, MicVocal, Film, Trophy,
-  Play, Loader, Headphones, User,
+  Play, Loader, Headphones, User, Radio, Plus, X,
 } from 'lucide-react'
 
-type LibraryTab = 'artist' | 'playlist' | 'album' | 'mv' | 'toplist'
+type LibraryTab = 'artist' | 'playlist' | 'album' | 'mv' | 'dj' | 'toplist'
 
 function formatCount(n: number): string {
   if (n >= 1e8) return `${(n / 1e8).toFixed(1)}亿`
@@ -102,7 +105,7 @@ function ArtistGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
                   {(item.picUrl || item.img1v1Url) ? <img src={avatarUrl(item.picUrl || item.img1v1Url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center text-gray-400"><User className="w-8 h-8" /></div>}
                 </div>
                 <p className="text-sm font-medium truncate w-full text-center">{item.name}</p>
-                {item.alias?.length > 0 && <p className="text-xs text-gray-500 truncate w-full text-center">{item.alias[0]}</p>}
+                {!!item.alias?.length && <p className="text-xs text-gray-500 truncate w-full text-center">{item.alias[0]}</p>}
               </div>
             ))}
           </div>
@@ -120,12 +123,17 @@ function PlaylistGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
   const [playlistOrder, setPlaylistOrder] = useState<'hot' | 'new'>('hot')
   const [playlistCat, setPlaylistCat] = useState('全部')
   const [playlistCats, setPlaylistCats] = useState<string[]>(['全部', '华语', '欧美', '日语', '韩语', '粤语', '流行', '摇滚', '民谣', '电子', '轻音乐', '说唱'])
+  const isLoggedIn = useAuthStore(s => s.isLoggedIn)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newPlaylistName, setNewPlaylistName] = useState('')
+  const [newPlaylistPrivacy, setNewPlaylistPrivacy] = useState<0 | 10>(0)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     getPlaylistCategory().then((res) => {
       const cats = res?.data?.categories || res?.data?.sub
       if (cats && Array.isArray(cats)) {
-        const names = cats.map((c: { name?: string; text?: string }) => c.name || c.text).filter(Boolean)
+        const names = cats.map((c: { name?: string; text?: string }) => c.name || c.text).filter((name): name is string => Boolean(name))
         if (names.length > 0) setPlaylistCats(['全部', ...names])
       }
     }).catch(() => {})
@@ -148,15 +156,91 @@ function PlaylistGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
 
   useEffect(() => { list.refresh() }, [playlistOrder, playlistCat])
 
+  const handleCreatePlaylist = useCallback(async () => {
+    const name = newPlaylistName.trim()
+    if (!isLoggedIn) {
+      showToast('请先登录', '登录后才能创建歌单')
+      return
+    }
+    if (!name) {
+      showToast('请输入歌单名称')
+      return
+    }
+    if (creating) return
+    setCreating(true)
+    try {
+      const res = await createPlaylist({ name, privacy: newPlaylistPrivacy })
+      const playlistId = res?.data?.id || res?.data?.playlist?.id
+      showToast('歌单创建成功', name)
+      setNewPlaylistName('')
+      setNewPlaylistPrivacy(0)
+      setShowCreate(false)
+      if (playlistId) onNavigate(`/playlist/${playlistId}`)
+      else list.refresh()
+    } catch (e: any) {
+      showToast('创建歌单失败', e?.message || '请稍后重试')
+    } finally {
+      setCreating(false)
+    }
+  }, [creating, isLoggedIn, list, newPlaylistName, newPlaylistPrivacy, onNavigate])
+
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex rounded-lg overflow-hidden bg-gray-100 dark:bg-white/5">
           <button onClick={() => setPlaylistOrder('hot')} className={`px-3 py-1.5 text-xs font-medium ${playlistOrder === 'hot' ? 'bg-[#e60026] text-white' : 'text-gray-500'}`}>最热</button>
           <button onClick={() => setPlaylistOrder('new')} className={`px-3 py-1.5 text-xs font-medium ${playlistOrder === 'new' ? 'bg-[#e60026] text-white' : 'text-gray-500'}`}>最新</button>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">{playlistCats.slice(0, 12).map(cat => <FilterPill key={cat} active={playlistCat === cat} onClick={() => setPlaylistCat(cat)}>{cat}</FilterPill>)}</div>
+        <div className="flex flex-1 items-center gap-1.5 flex-wrap">{playlistCats.slice(0, 12).map(cat => <FilterPill key={cat} active={playlistCat === cat} onClick={() => setPlaylistCat(cat)}>{cat}</FilterPill>)}</div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#e60026] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[#e60026]/20 transition-colors hover:bg-[#c4001f]"
+        >
+          <Plus className="w-3.5 h-3.5" /> 新建歌单
+        </button>
       </div>
+      {showCreate && (
+        <div className="mb-5 rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">新建歌单</h3>
+            <button onClick={() => setShowCreate(false)} className="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <input
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreatePlaylist()}
+              placeholder="给歌单取个名字"
+              maxLength={40}
+              className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none transition-shadow focus:ring-2 focus:ring-[#e60026]/25 dark:border-white/[0.08] dark:bg-black/20"
+              autoFocus
+            />
+            <div className="flex rounded-lg bg-white p-1 dark:bg-black/20">
+              <button
+                onClick={() => setNewPlaylistPrivacy(0)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${newPlaylistPrivacy === 0 ? 'bg-[#e60026] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10'}`}
+              >
+                公开
+              </button>
+              <button
+                onClick={() => setNewPlaylistPrivacy(10)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${newPlaylistPrivacy === 10 ? 'bg-[#e60026] text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10'}`}
+              >
+                私密
+              </button>
+            </div>
+            <button
+              onClick={handleCreatePlaylist}
+              disabled={creating}
+              className="h-10 rounded-lg bg-[#e60026] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#c4001f] disabled:opacity-50"
+            >
+              {creating ? '创建中...' : '创建'}
+            </button>
+          </div>
+        </div>
+      )}
       {list.initialLoading ? (
         <div className="flex justify-center py-16"><Loader className="w-6 h-6 animate-spin text-[#e60026]" /></div>
       ) : list.items.length === 0 ? (
@@ -169,7 +253,7 @@ function PlaylistGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
                 <div className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-xl overflow-hidden relative shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-transform">
                   <img src={coverUrl(pl.coverImgUrl)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
                   <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm">{pl.trackCount || pl.totalCount || 0} 首</div>
-                  {pl.playCount > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Headphones className="w-2.5 h-2.5" />{formatCount(pl.playCount)}</div>}
+                  {(pl.playCount ?? 0) > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Headphones className="w-2.5 h-2.5" />{formatCount(pl.playCount ?? 0)}</div>}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Play className="w-8 h-8 text-white fill-white" /></div>
                 </div>
                 <p className="text-sm font-medium mt-2 truncate">{pl.name}</p>
@@ -274,16 +358,67 @@ function MvGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
         <>
           <div className="grid grid-cols-2 gap-4">
             {renderedItems.map((mv: { id: number; name: string; imgurl?: string; cover?: string; picUrl?: string; imgurl16v9?: string; playCount?: number; duration?: number; artistName?: string }) => (
-              <div key={mv.id} className="grid-card-item cursor-pointer group rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 hover:shadow-lg hover:-translate-y-0.5 transition-transform">
+              <div key={mv.id} className="grid-card-item cursor-pointer group rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 hover:shadow-lg hover:-translate-y-0.5 transition-transform" onClick={() => onNavigate(`/mv/${mv.id}`)}>
                 <div className="relative aspect-video bg-gray-200 dark:bg-gray-700 overflow-hidden">
                   <img src={coverUrl(mv.imgurl || mv.cover || mv.picUrl || mv.imgurl16v9)} alt={mv.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"><Play className="w-6 h-6 text-white ml-0.5" /></div></div>
-                  {mv.playCount > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Play className="w-2.5 h-2.5" />{formatCount(mv.playCount)}</div>}
+                  {(mv.playCount ?? 0) > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Play className="w-2.5 h-2.5" />{formatCount(mv.playCount ?? 0)}</div>}
                   {mv.duration && <div className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm">{Math.floor(mv.duration / 60000)}:{String(Math.floor((mv.duration % 60000) / 1000)).padStart(2, '0')}</div>}
                 </div>
                 <div className="p-3"><p className="text-sm font-medium truncate">{mv.name}</p>{mv.artistName && <p className="text-xs text-gray-500 truncate mt-0.5">{mv.artistName}</p>}</div>
               </div>
             ))}
+          </div>
+          {placeholderHeight > 0 && <div style={{ height: placeholderHeight }} />}
+          <div ref={prSentinel} className="h-1" />
+          <div ref={sentinelRef} className="h-1" />
+          <LoadMore loading={list.loading && !list.initialLoading} hasMore={list.hasMore} error={list.error} onLoadMore={list.loadMore} onRetry={list.refresh} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function DjGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const fetcher = useCallback(async (p: { offset: number; limit: number }) => {
+    const res = await request.get('/dj/hot', { params: { limit: p.limit, offset: p.offset } })
+    return res?.data?.djRadios || res?.data?.data?.djRadios || res?.data?.data || []
+  }, [])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const list = usePaginatedList<any, Record<string, never>>({ fetcher, params: {} as Record<string, never>, pageSize: 30 })
+  const { renderedItems, placeholderHeight, sentinelRef: prSentinel }
+    = useProgressiveRender({ items: list.items, itemHeight: 260, initialCount: 10, batchSize: 10, resetKey: 'dj-hot' })
+
+  const allRendered = renderedItems.length === list.items.length
+  const sentinelRef = useInfiniteScroll(allRendered ? list.loadMore : () => {}, allRendered && list.hasMore, list.loading)
+
+  useEffect(() => { list.refresh() }, [])
+
+  return (
+    <div>
+      {list.initialLoading ? (
+        <div className="flex justify-center py-16"><Loader className="w-6 h-6 animate-spin text-[#e60026]" /></div>
+      ) : list.items.length === 0 ? (
+        <div className="text-center text-gray-400 py-16"><Radio className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>暂无电台</p></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-5 gap-4">
+            {renderedItems.map((dj: { id?: number; rid?: number; name: string; picUrl?: string; coverUrl?: string; category?: string; programCount?: number; playCount?: number; subCount?: number; dj?: { nickname?: string } }) => {
+              const rid = dj.id || dj.rid
+              return (
+                <div key={rid || dj.name} className="grid-card-item cursor-pointer group" onClick={() => rid && onNavigate(`/dj/${rid}`)}>
+                  <div className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-xl overflow-hidden relative shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-transform">
+                    <img src={coverUrl(dj.picUrl || dj.coverUrl || '')} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
+                    {(dj.programCount || 0) > 0 && <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm">{dj.programCount} 期</div>}
+                    {(dj.playCount || 0) > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Headphones className="w-2.5 h-2.5" />{formatCount(dj.playCount || 0)}</div>}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Play className="w-8 h-8 text-white fill-white" /></div>
+                  </div>
+                  <p className="text-sm font-medium mt-2 truncate">{dj.name}</p>
+                  <p className="text-xs text-gray-500 truncate">{dj.dj?.nickname || dj.category || `${formatCount(dj.subCount || 0)} 订阅`}</p>
+                </div>
+              )
+            })}
           </div>
           {placeholderHeight > 0 && <div style={{ height: placeholderHeight }} />}
           <div ref={prSentinel} className="h-1" />
@@ -343,6 +478,7 @@ export default function LibraryPage() {
     { key: 'artist', label: '歌手', icon: MicVocal },
     { key: 'album', label: '新碟上架', icon: Disc3 },
     { key: 'mv', label: 'MV 精选', icon: Film },
+    { key: 'dj', label: '电台', icon: Radio },
     { key: 'toplist', label: '排行榜', icon: Trophy },
   ]
 
@@ -376,6 +512,7 @@ export default function LibraryPage() {
       <TabCache active={tab === 'playlist'}><PlaylistGrid onNavigate={handleNavigate} /></TabCache>
       <TabCache active={tab === 'album'}><AlbumGrid onNavigate={handleNavigate} /></TabCache>
       <TabCache active={tab === 'mv'}><MvGrid onNavigate={handleNavigate} /></TabCache>
+      <TabCache active={tab === 'dj'}><DjGrid onNavigate={handleNavigate} /></TabCache>
       <TabCache active={tab === 'toplist'}><ToplistGrid onNavigate={handleNavigate} /></TabCache>
     </div>
   )

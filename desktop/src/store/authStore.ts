@@ -95,10 +95,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ isLoggedIn: true, profile: userProfile })
       } else {
         set({ isLoggedIn: false, profile: null })
+        if (token) await adapter.removeItem(TOKEN_KEY)
+        throw new Error('登录状态验证失败')
       }
     } catch {
       // 登录验证失败
       set({ isLoggedIn: false, profile: null })
+      if (token) await adapter.removeItem(TOKEN_KEY)
+      throw new Error('登录状态验证失败')
     }
   },
 

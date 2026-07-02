@@ -6,6 +6,15 @@ import { QrCode, Smartphone, Mail, ArrowLeft, Loader2, UserX, Cookie } from 'luc
 
 type LoginTab = 'qr' | 'email' | 'phone' | 'cookie'
 
+function formatLoginError(errData?: { message?: string; msg?: string; code?: number }) {
+  const raw = errData?.message || errData?.msg || ''
+  if (raw.includes('网络环境存在风险') || raw.includes('环境存在风险')) {
+    return '网易云判定当前 API 服务网络环境存在风险。手机密码/验证码登录容易被风控，建议改用扫码登录、Cookie 登录，或在本机/可信服务器自建 API。'
+  }
+  if (errData?.code === 502) return '服务器错误，请稍后重试'
+  return raw || '登录失败'
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const login = useAuthStore((s) => s.login)
@@ -145,25 +154,15 @@ export default function LoginPage() {
           const cookieStr = Array.isArray(headerCookie) ? headerCookie.join('; ') : headerCookie
           await login(cookieStr)
         } else {
-          // 最后兜底：保存空 token，让 checkLoginStatus 通过 cookie 自动验证
-          await login('')
+          throw new Error('登录成功但未获取到凭证，请改用扫码或 Cookie 登录')
         }
         navigate(-1)
       } else {
-        const code = res?.data?.code
-        if (code === 502) {
-          setError('服务器错误，请稍后重试')
-        } else {
-          setError(res?.data?.message || res?.data?.msg || '登录失败，请检查账号密码')
-        }
+        setError(formatLoginError(res?.data) || '登录失败，请检查账号密码')
       }
     } catch (e: unknown) {
       const errData = (e as { response?: { data?: { message?: string; msg?: string; code?: number } } })?.response?.data
-      if (errData?.code === 502) {
-        setError('服务器错误，请稍后重试')
-      } else {
-        setError(errData?.message || errData?.msg || '登录失败')
-      }
+      setError(formatLoginError(errData))
     } finally {
       setLoading(false)
     }
@@ -198,24 +197,15 @@ export default function LoginPage() {
           const cookieStr = Array.isArray(headerCookie) ? headerCookie.join('; ') : headerCookie
           await login(cookieStr)
         } else {
-          await login('')
+          throw new Error('登录成功但未获取到凭证，请改用扫码或 Cookie 登录')
         }
         navigate(-1)
       } else {
-        const code = res?.data?.code
-        if (code === 502) {
-          setError('服务器错误，请稍后重试')
-        } else {
-          setError(res?.data?.message || res?.data?.msg || '登录失败')
-        }
+        setError(formatLoginError(res?.data))
       }
     } catch (e: unknown) {
       const errData = (e as { response?: { data?: { message?: string; msg?: string; code?: number } } })?.response?.data
-      if (errData?.code === 502) {
-        setError('服务器错误，请稍后重试')
-      } else {
-        setError(errData?.message || errData?.msg || '登录失败')
-      }
+      setError(formatLoginError(errData))
     } finally {
       setLoading(false)
     }

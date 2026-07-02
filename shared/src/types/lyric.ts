@@ -67,6 +67,8 @@ export interface ILyric {
   lrc: Lrc;
   klyric: Lrc;
   tlyric: Lrc;
+  romalrc?: Lrc;
+  yrc?: Lrc;
   code: number;
 }
 

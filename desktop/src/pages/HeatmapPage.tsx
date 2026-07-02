@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getMusicCalendar } from '@shared'
 import { useAuthStore } from '@/store/authStore'
-import { ArrowLeft, Loader, TrendingUp, ChevronLeft, ChevronRight, User } from 'lucide-react'
+import { ArrowLeft, Loader, TrendingUp, ChevronLeft, ChevronRight, User, AlertCircle } from 'lucide-react'
 
 interface DayData {
   date: string    // 'YYYY-MM-DD'
@@ -18,7 +18,34 @@ export default function HeatmapPage() {
 
   const [calendar, setCalendar] = useState<DayData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [year, setYear] = useState(new Date().getFullYear())
+  const [reloadKey, setReloadKey] = useState(0)
+  const currentYear = new Date().getFullYear()
+
+  const normalizeDate = (value: unknown) => {
+    if (!value) return ''
+    if (typeof value === 'number') {
+      const d = new Date(value)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const str = String(value)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+    if (/^\d{8}$/.test(str)) return `${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`
+    return str.slice(0, 10)
+  }
+
+  const normalizeCalendar = (payload: any): DayData[] => {
+    const data = payload?.data?.data || payload?.data || payload
+    const raw = data?.calendar || data?.everyday || data?.list || data
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((d: any) => ({
+        date: normalizeDate(d.date || d.day || d.time || d.timestamp),
+        count: Number(d.count ?? d.listenCount ?? d.playCount ?? d.songCount ?? d.value ?? d.resources?.length ?? 0),
+      }))
+      .filter((d: DayData) => d.date && d.date.startsWith(`${year}-`))
+  }
 
   useEffect(() => {
     if (!isLoggedIn || !profile?.userId) {
@@ -26,26 +53,19 @@ export default function HeatmapPage() {
       return
     }
     setLoading(true)
+    setError('')
     const start = new Date(year, 0, 1).getTime()
     const end = new Date(year, 11, 31, 23, 59, 59).getTime()
     getMusicCalendar(start, end)
       .then((res: any) => {
-        const data = res?.data?.data || res?.data
-        if (Array.isArray(data)) {
-          setCalendar(data.map((d: any) => ({
-            date: d.date || d.day || '',
-            count: d.count || d.listenCount || d.value || 0,
-          })))
-        } else if (data?.everyday) {
-          setCalendar(data.everyday.map((d: any) => ({
-            date: d.date || d.day || '',
-            count: d.count || d.listenCount || d.value || 0,
-          })))
-        }
+        setCalendar(normalizeCalendar(res))
       })
-      .catch(() => {})
+      .catch((e: any) => {
+        setCalendar([])
+        setError(e?.response?.data?.message || e?.message || '听歌日历加载失败，请稍后重试')
+      })
       .finally(() => setLoading(false))
-  }, [profile?.userId, isLoggedIn, year])
+  }, [profile?.userId, isLoggedIn, year, reloadKey])
 
   // build date-count map
   const countMap = useMemo(() => {
@@ -55,6 +75,18 @@ export default function HeatmapPage() {
   }, [calendar])
 
   const maxCount = useMemo(() => Math.max(1, ...Array.from(countMap.values())), [countMap])
+  const stats = useMemo(() => {
+    const values = Array.from(countMap.values())
+    const total = values.reduce((sum, count) => sum + count, 0)
+    const activeDays = values.filter(count => count > 0).length
+    const maxDay = calendar.reduce<DayData | null>((best, item) => (!best || item.count > best.count ? item : best), null)
+    return {
+      total,
+      activeDays,
+      maxDay,
+      average: activeDays > 0 ? Math.round(total / activeDays) : 0,
+    }
+  }, [calendar, countMap])
 
   // generate month grids
   const months = useMemo(() => {
@@ -112,7 +144,11 @@ export default function HeatmapPage() {
             <ChevronLeft className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </button>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 w-12 text-center">{year}</span>
-          <button onClick={() => setYear(y => Math.min(y + 1, new Date().getFullYear()))} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+          <button
+            onClick={() => setYear(y => Math.min(y + 1, currentYear))}
+            disabled={year >= currentYear}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          >
             <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
@@ -128,6 +164,14 @@ export default function HeatmapPage() {
         </div>
       ) : loading ? (
         <div className="flex justify-center py-16"><Loader className="w-6 h-6 animate-spin text-[#e60026]" /></div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+          <AlertCircle className="w-12 h-12 mb-4 opacity-30" />
+          <p className="text-sm">{error}</p>
+          <button onClick={() => setReloadKey(k => k + 1)} className="mt-3 px-4 py-2 bg-[#e60026] text-white rounded-lg text-sm font-medium hover:bg-[#c4001f] transition-colors">
+            重试
+          </button>
+        </div>
       ) : (
         <>
           {/* summary */}
@@ -135,9 +179,22 @@ export default function HeatmapPage() {
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-500" />
               <div>
-                <div className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{calendar.reduce((a, d) => a + d.count, 0)} 首</div>
+                <div className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{stats.total} 首</div>
                 <div className="text-[10px] text-gray-400">{year}年总播放</div>
               </div>
+            </div>
+            <div className="h-8 w-px bg-gray-200 dark:bg-white/[0.06]" />
+            <div>
+              <div className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{stats.activeDays} 天</div>
+              <div className="text-[10px] text-gray-400">活跃天数</div>
+            </div>
+            <div>
+              <div className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{stats.maxDay?.count || 0} 首</div>
+              <div className="text-[10px] text-gray-400">{stats.maxDay?.date || '最高单日'}</div>
+            </div>
+            <div>
+              <div className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{stats.average} 首</div>
+              <div className="text-[10px] text-gray-400">活跃日均</div>
             </div>
             <div className="flex-1" />
             {/* legend */}

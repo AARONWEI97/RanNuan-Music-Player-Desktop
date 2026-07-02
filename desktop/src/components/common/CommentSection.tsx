@@ -29,12 +29,53 @@ type CommentSort = 'hot' | 'new'
 
 const TYPE_MAP: Record<string, number> = { song: 0, mv: 1, playlist: 2, album: 3, dj: 4, video: 5, event: 6 }
 const PAGE_SIZE = 20
+type FloorReplyState = {
+  loaded: boolean
+  loading: boolean
+  items: CommentData[]
+  hasMore: boolean
+  nextTime?: number
+  entering?: boolean
+  collapsing?: boolean
+}
+
+function getFloorCount(c: any): number {
+  return Number(
+    c.showFloorCount ??
+    c.repliedCount ??
+    c.replyCount ??
+    c.showReplyCount ??
+    c.showFloorComment?.replyCount ??
+    c.showFloorComment?.comments?.length ??
+    0
+  )
+}
+
+function normalizeComment(c: any): CommentData {
+  return {
+    ...c,
+    liked: c.liked || false,
+    hugged: c.hugged || false,
+    hugCount: c.hugCount || 0,
+    showFloorCount: getFloorCount(c),
+  }
+}
+
+function getScrollContainer(el: HTMLElement): HTMLElement | null {
+  let parent = el.parentElement
+  while (parent) {
+    const overflowY = window.getComputedStyle(parent).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll') return parent
+    parent = parent.parentElement
+  }
+  return null
+}
 
 /* ═══════════════ COMMENTSECTION PROPS ═══════════════ */
 
 interface CommentSectionProps {
-  resourceId: number
-  resourceType: 'song' | 'playlist' | 'album'
+  resourceId: number | string
+  resourceType: 'song' | 'playlist' | 'album' | 'mv' | 'dj' | 'video' | 'event'
   onTotalChange?: (total: number) => void
   initialComments?: CommentData[]
   customFetcher?: (offset: number) => Promise<{ comments: CommentData[]; total: number; more: boolean }>
@@ -54,7 +95,7 @@ const CommentItem = memo(function CommentItem({
   onDelete: (c: CommentData) => void
   onHug: (c: CommentData) => void
   onViewFloor: (c: CommentData) => void
-  onReport: (c: CommentData) => void
+  onReport: (c: CommentData, reason: string) => void
   isFloor?: boolean
 }) {
   const selfUid = useAuthStore(s => s.profile?.userId || 0)
@@ -127,7 +168,7 @@ const CommentItem = memo(function CommentItem({
             {showReport && (
               <div className="absolute bottom-full left-0 mb-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
                 {REPORT_REASONS.map(r => (
-                  <button key={r} onClick={() => { onReport(c); setShowReport(false) }}
+                  <button key={r} onClick={() => { onReport(c, r); setShowReport(false) }}
                     className="block w-full text-left px-3 py-1 text-[11px] text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-colors">
                     {r}
                   </button>
@@ -192,7 +233,38 @@ export default function CommentSection({
   const newPageRef = useRef(1)
 
   // ── floor replies ──
-  const [floorMap, setFloorMap] = useState<Record<number, { loaded: boolean; items: CommentData[] }>>({})
+  const [floorMap, setFloorMap] = useState<Record<number, FloorReplyState>>({})
+  const commentRefs = useRef<Record<number, HTMLDivElement | null>>({})
+
+  const runWithStableCommentPosition = useCallback((commentId: number, update: () => void) => {
+    const anchor = commentRefs.current[commentId]
+    const beforeTop = anchor?.getBoundingClientRect().top
+    const scrollContainer = anchor ? getScrollContainer(anchor) : null
+
+    update()
+
+    if (!anchor || beforeTop == null) return
+    requestAnimationFrame(() => {
+      const current = commentRefs.current[commentId]
+      if (!current) return
+      const delta = current.getBoundingClientRect().top - beforeTop
+      if (Math.abs(delta) < 1) return
+      if (scrollContainer) scrollContainer.scrollTop += delta
+      else window.scrollBy(0, delta)
+    })
+  }, [])
+
+  const finishFloorCollapse = useCallback((commentId: number) => {
+    setFloorMap(prev => {
+      if (!prev[commentId]?.collapsing) return prev
+      const next = { ...prev }
+      delete next[commentId]
+      return next
+    })
+    requestAnimationFrame(() => {
+      commentRefs.current[commentId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
 
   // ── new comment input ──
   const [newCommentText, setNewCommentText] = useState('')
@@ -210,9 +282,7 @@ export default function CommentSection({
           id: resourceId, type: typeNum, pageNo: 1, pageSize: PAGE_SIZE, sortType: 2,
         })
         const data = r?.data
-        const list: CommentData[] = (data?.data?.comments || data?.comments || []).map((c: any) => ({
-          ...c, liked: c.liked || false, hugged: c.hugged || false, hugCount: c.hugCount || 0, showFloorCount: c.showFloorCount || c.repliedCount || 0,
-        }))
+        const list: CommentData[] = (data?.data?.comments || data?.comments || []).map(normalizeComment)
         setHotComments(list)
         setTotal(data?.data?.totalCount || data?.totalCount || data?.total || 0)
         setHasMore(list.length >= PAGE_SIZE)
@@ -223,16 +293,16 @@ export default function CommentSection({
           id: resourceId, type: typeNum, pageNo: 1, pageSize: PAGE_SIZE, sortType: 3,
         })
         const data = r?.data
-        const list: CommentData[] = (data?.data?.comments || data?.comments || []).map((c: any) => ({
-          ...c, liked: c.liked || false, hugged: c.hugged || false, hugCount: c.hugCount || 0, showFloorCount: c.showFloorCount || c.repliedCount || 0,
-        }))
+        const list: CommentData[] = (data?.data?.comments || data?.comments || []).map(normalizeComment)
         setNewComments(list)
         setTotal(data?.data?.totalCount || data?.totalCount || data?.total || 0)
         setHasMore(list.length >= PAGE_SIZE)
         newPageRef.current = 2
         onTotalChange?.(data?.data?.totalCount || data?.totalCount || data?.total || 0)
       }
-    } catch { } finally { setLoading(false) }
+    } catch {
+      // ignore fetch errors; UI keeps previous state
+    } finally { setLoading(false) }
   }, [resourceId, typeNum, sort, historyMode, customFetcher])
 
   useEffect(() => {
@@ -249,9 +319,7 @@ export default function CommentSection({
           id: resourceId, type: typeNum, pageNo: Math.ceil(hotOffsetRef.current / PAGE_SIZE) + 1,
           pageSize: PAGE_SIZE, sortType: 2,
         })
-        const list: CommentData[] = (r?.data?.data?.comments || r?.data?.comments || []).map((c: any) => ({
-          ...c, liked: c.liked || false, hugged: c.hugged || false, hugCount: c.hugCount || 0, showFloorCount: c.showFloorCount || c.repliedCount || 0,
-        }))
+        const list: CommentData[] = (r?.data?.data?.comments || r?.data?.comments || []).map(normalizeComment)
         setHotComments(prev => [...prev, ...list])
         setHasMore(list.length >= PAGE_SIZE)
         hotOffsetRef.current += PAGE_SIZE
@@ -260,14 +328,14 @@ export default function CommentSection({
           id: resourceId, type: typeNum, pageNo: newPageRef.current,
           pageSize: PAGE_SIZE, sortType: 3,
         })
-        const list: CommentData[] = (r?.data?.data?.comments || r?.data?.comments || []).map((c: any) => ({
-          ...c, liked: c.liked || false, hugged: c.hugged || false, hugCount: c.hugCount || 0, showFloorCount: c.showFloorCount || c.repliedCount || 0,
-        }))
+        const list: CommentData[] = (r?.data?.data?.comments || r?.data?.comments || []).map(normalizeComment)
         setNewComments(prev => [...prev, ...list])
         setHasMore(list.length >= PAGE_SIZE)
         newPageRef.current += 1
       }
-    } catch { } finally { setLoadingMore(false) }
+    } catch {
+      // ignore pagination errors
+    } finally { setLoadingMore(false) }
   }, [loadingMore, sort, resourceId, typeNum])
 
   // ── sort switch ──
@@ -291,8 +359,13 @@ export default function CommentSection({
     try {
       await sendComment({ t: 2, type: typeNum, id: resourceId, commentId: c.commentId, content })
       showToast('回复成功')
+      if (floorMap[c.commentId]?.loaded) {
+        setFloorMap(prev => { const n = { ...prev }; delete n[c.commentId]; return n })
+      } else {
+        fetchComments(true)
+      }
     } catch { showToast('回复失败') }
-  }, [resourceId, typeNum])
+  }, [resourceId, typeNum, floorMap, fetchComments])
 
   const handleDelete = useCallback(async (c: CommentData) => {
     const remover = (prev: CommentData[]) => prev.filter(x => x.commentId !== c.commentId)
@@ -310,23 +383,83 @@ export default function CommentSection({
     try { await hugComment({ uid: selfUid, cid: c.commentId, sid: resourceId }) } catch { showToast('操作失败') }
   }, [selfUid, resourceId])
 
-  const handleViewFloor = useCallback(async (c: CommentData) => {
+  const handleViewFloor = useCallback(async (c: CommentData, append = false) => {
     const existing = floorMap[c.commentId]
-    if (existing?.loaded) {
+    if (existing?.collapsing) return
+    if (existing?.loaded && !append) {
       // collapse
-      setFloorMap(prev => { const n = { ...prev }; delete n[c.commentId]; return n })
+      setFloorMap(prev => prev[c.commentId] ? ({
+        ...prev,
+        [c.commentId]: { ...prev[c.commentId], collapsing: true },
+      }) : prev)
       return
     }
+    if (existing?.loading) return
+    runWithStableCommentPosition(c.commentId, () => {
+      setFloorMap(prev => ({
+        ...prev,
+        [c.commentId]: {
+          loaded: !!prev[c.commentId]?.loaded,
+          loading: true,
+          items: prev[c.commentId]?.items || [],
+          hasMore: prev[c.commentId]?.hasMore ?? true,
+          nextTime: prev[c.commentId]?.nextTime,
+          entering: !append && !prev[c.commentId],
+        }
+      }))
+    })
+    if (!append && !existing) {
+      requestAnimationFrame(() => {
+        setFloorMap(prev => prev[c.commentId]?.entering ? ({
+          ...prev,
+          [c.commentId]: { ...prev[c.commentId], entering: false },
+        }) : prev)
+      })
+    }
     try {
-      const r: any = await getFloorComment({ parentCommentId: c.commentId, id: resourceId, type: typeNum, limit: 20 })
-      const list: CommentData[] = (r?.data?.data || r?.data || []).map((x: any) => ({ ...x, liked: x.liked || false }))
-      setFloorMap(prev => ({ ...prev, [c.commentId]: { loaded: true, items: list } }))
-    } catch { showToast('加载回复失败') }
-  }, [resourceId, typeNum, floorMap])
+      const r: any = await getFloorComment({
+        parentCommentId: c.commentId,
+        id: resourceId,
+        type: typeNum,
+        limit: 20,
+        ...(append && existing?.nextTime ? { time: existing.nextTime } : {}),
+      } as any)
+      const raw = r?.data?.data?.comments || r?.data?.data || r?.data?.comments || []
+      const list: CommentData[] = (Array.isArray(raw) ? raw : []).map(normalizeComment)
+      const hasMore = Boolean(r?.data?.data?.hasMore ?? r?.data?.hasMore ?? list.length >= 20)
+      const nextTime = list.length > 0 ? list[list.length - 1].time : existing?.nextTime
+      const applyLoadedReplies = () => {
+        setFloorMap(prev => ({
+          ...prev,
+          [c.commentId]: {
+            loaded: true,
+            loading: false,
+            items: append ? [...(prev[c.commentId]?.items || []), ...list] : list,
+            hasMore,
+            nextTime,
+          }
+        }))
+      }
+      if (append) applyLoadedReplies()
+      else runWithStableCommentPosition(c.commentId, applyLoadedReplies)
+    } catch {
+      setFloorMap(prev => ({
+        ...prev,
+        [c.commentId]: {
+          loaded: !!prev[c.commentId]?.loaded,
+          loading: false,
+          items: prev[c.commentId]?.items || [],
+          hasMore: prev[c.commentId]?.hasMore ?? false,
+          nextTime: prev[c.commentId]?.nextTime,
+        }
+      }))
+      showToast('加载回复失败')
+    }
+  }, [resourceId, typeNum, floorMap, runWithStableCommentPosition])
 
-  const handleReport = useCallback(async (c: CommentData) => {
+  const handleReport = useCallback(async (c: CommentData, reason: string) => {
     try {
-      await reportComment({ id: resourceId, cid: c.commentId, reason: '用户举报', type: typeNum })
+      await reportComment({ id: resourceId, cid: c.commentId, reason, type: typeNum })
       showToast('举报已提交', '感谢你的反馈')
     } catch { showToast('举报失败') }
   }, [resourceId, typeNum])
@@ -421,40 +554,75 @@ export default function CommentSection({
         </div>
       ) : (
         <>
-          <div className="divide-y divide-gray-100 dark:divide-white/[0.04]">
-            {comments.map(c => (
-              <div key={c.commentId}>
-                <CommentItem
-                  c={c}
-                  onLike={handleLike}
-                  onReply={handleReply}
-                  onDelete={handleDelete}
-                  onHug={handleHug}
-                  onViewFloor={handleViewFloor}
-                  onReport={handleReport}
-                />
-                {/* floor replies */}
-                {floorMap[c.commentId]?.loaded && (
-                  <div className="bg-gray-50/50 dark:bg-white/[0.01] rounded-b-lg">
-                    {floorMap[c.commentId].items.length === 0 ? (
-                      <p className="py-4 text-center text-[11px] text-gray-400">暂无回复</p>
-                    ) : (
-                      floorMap[c.commentId].items.map(fr => (
-                        <CommentItem key={fr.commentId} c={fr}
-                          onLike={handleLike} onReply={handleReply} onDelete={handleDelete}
-                          onHug={handleHug} onViewFloor={handleViewFloor} onReport={handleReport}
-                          isFloor
-                        />
-                      ))
-                    )}
-                    <button onClick={() => handleViewFloor(c)}
-                      className="w-full py-1.5 text-[10px] text-gray-400 hover:text-[#e60026] transition-colors flex items-center justify-center gap-1">
-                      <ChevronUp className="w-3 h-3" /> 收起回复
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="divide-y divide-gray-100 dark:divide-white/[0.04] [overflow-anchor:none]">
+            {comments.map(c => {
+              const floorState = floorMap[c.commentId]
+              return (
+                <div key={c.commentId} ref={el => { commentRefs.current[c.commentId] = el }}>
+                  <CommentItem
+                    c={c}
+                    onLike={handleLike}
+                    onReply={handleReply}
+                    onDelete={handleDelete}
+                    onHug={handleHug}
+                    onViewFloor={handleViewFloor}
+                    onReport={handleReport}
+                  />
+                  {/* floor replies */}
+                  {floorState && (
+                    <div
+                      className={`grid bg-gray-50/50 dark:bg-white/[0.01] rounded-b-lg overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-in-out [overflow-anchor:none] ${
+                        floorState.entering || floorState.collapsing ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                      }`}
+                      onTransitionEnd={e => {
+                        if (e.currentTarget !== e.target || e.propertyName !== 'grid-template-rows') return
+                        if (floorState.collapsing) finishFloorCollapse(c.commentId)
+                      }}
+                    >
+                      <div className="min-h-0 overflow-hidden">
+                        {!floorState.loaded && floorState.loading ? (
+                          <div className="ml-10 pl-3 py-3 border-l-2 border-gray-100 dark:border-white/[0.06] space-y-2">
+                            {Array.from({ length: 2 }).map((_, i) => (
+                              <div key={i} className="flex gap-2.5 animate-pulse">
+                                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex-shrink-0" />
+                                <div className="flex-1 space-y-2 pt-1">
+                                  <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+                                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-4/5" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : floorState.items.length === 0 ? (
+                          <p className="py-4 text-center text-[11px] text-gray-400">暂无回复</p>
+                        ) : (
+                          floorState.items.map(fr => (
+                            <CommentItem key={fr.commentId} c={fr}
+                              onLike={handleLike} onReply={handleReply} onDelete={handleDelete}
+                              onHug={handleHug} onViewFloor={handleViewFloor} onReport={handleReport}
+                              isFloor
+                            />
+                          ))
+                        )}
+                        {floorState.hasMore && floorState.loaded && (
+                          <button onClick={() => handleViewFloor(c, true)}
+                            disabled={floorState.loading || floorState.collapsing}
+                            className="w-full py-1.5 text-[10px] text-gray-400 hover:text-[#e60026] transition-colors flex items-center justify-center gap-1 disabled:opacity-40">
+                            {floorState.loading ? <><Loader className="w-3 h-3 animate-spin" /> 加载中...</> : <><ChevronDown className="w-3 h-3" /> 加载更多回复</>}
+                          </button>
+                        )}
+                        {floorState.loaded && (
+                          <button onClick={() => handleViewFloor(c)}
+                            disabled={floorState.collapsing}
+                            className="w-full py-1.5 text-[10px] text-gray-400 hover:text-[#e60026] transition-colors flex items-center justify-center gap-1 disabled:opacity-40">
+                            <ChevronUp className="w-3 h-3" /> 收起回复
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {/* load more */}

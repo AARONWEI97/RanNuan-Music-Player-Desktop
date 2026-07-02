@@ -19,6 +19,8 @@ import HeatmapPage from './pages/HeatmapPage'
 import DownloadPage from './pages/DownloadPage'
 import PlaylistImportPage from './pages/PlaylistImportPage'
 import UniversePage from './pages/UniversePage'
+import MvPage from './pages/MvPage'
+import VideoPage from './pages/VideoPage'
 
 export default function AppRoutes() {
   return (
@@ -37,6 +39,8 @@ export default function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/toplist" element={<TopListPage />} />
       <Route path="/user/:id" element={<UserPage />} />
+      <Route path="/mv/:id" element={<MvPage />} />
+      <Route path="/video/:id" element={<VideoPage />} />
       <Route path="/daily-recommend" element={<DailyRecommendPage />} />
       <Route path="/comment-history" element={<CommentHistoryPage />} />
       <Route path="/heatmap" element={<HeatmapPage />} />

@@ -129,7 +129,7 @@ export const getUserEvent = (params: { uid: number; limit?: number; lasttime?: n
     params: {
       uid: params.uid,
       limit: params.limit || 30,
-      lasttime: params.lasttime || -1
+      lasttime: params.lasttime ?? -1
     }
   });
 };
@@ -305,6 +305,7 @@ export const getDjSublist = (params?: { limit?: number; offset?: number }) => {
     method: 'get',
     params: {
       limit: params?.limit || 30,
+      offset: params?.offset || 0,
       timestamp: Date.now()
     }
   });
@@ -341,24 +342,34 @@ export const getRecentDj = (limit: number = 100) => {
 };
 
 // ─── 头像上传 ───
-export const uploadAvatar = (uri: string, imgSize?: number) => {
+export const uploadAvatar = (source: string | File | Blob, imgSize?: number) => {
   const formData = new FormData();
-  const fileName = uri.split('/').pop() || 'avatar.jpg';
-  const fileType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
-  formData.append('imgFile', {
-    uri,
-    name: fileName,
-    type: fileType,
-  } as any);
+
+  if (typeof source === 'string') {
+    const fileName = source.split('/').pop() || 'avatar.jpg';
+    const fileType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    formData.append('imgFile', {
+      uri: source,
+      name: fileName,
+      type: fileType,
+    } as any);
+  } else {
+    const fileName = source instanceof File ? source.name : 'avatar.jpg';
+    formData.append('imgFile', source, fileName);
+  }
+
   if (imgSize) formData.append('imgSize', String(imgSize));
 
   return request({
     url: '/avatar/upload',
     method: 'post',
     data: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
     timeout: 30000,
   });
 };
+
+export function parseAvatarUploadUrl(res: any): string | null {
+  const root = res?.data ?? res;
+  const data = root?.data ?? root;
+  return data?.avatarUrl || data?.url || root?.avatarUrl || null;
+}

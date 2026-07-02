@@ -41,6 +41,7 @@ export interface IWordData {
 export interface ILyricText {
   text: string;
   trText: string;
+  romaText?: string;
   words?: IWordData[];
   hasWordByWord?: boolean;
   startTime?: number;

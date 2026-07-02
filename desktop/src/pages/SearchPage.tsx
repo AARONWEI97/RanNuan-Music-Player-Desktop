@@ -7,20 +7,29 @@ import { playSong } from '@/services/audioService'
 import { coverUrl, avatarUrl } from '@/utils/image'
 import SongRow from '@/components/common/SongRow'
 import {
-  Search, Play, Headphones, TrendingUp, Clock, X, Music, User, Disc, List,
+  Search, Play, Headphones, TrendingUp, Clock, X, Music, User, Disc, List, Radio, Video, FileText, Users,
 } from 'lucide-react'
 
-type SearchTab = 1 | 100 | 10 | 1000
+type SearchTab = 1 | 100 | 10 | 1000 | 1002 | 1004 | 1006 | 1009 | 1014
 
 interface ArtistResult { id: number; name: string; picUrl?: string; alias?: string[] }
 interface AlbumResult { id: number; name: string; picUrl?: string; artist?: { name: string } }
 interface PlaylistResult { id: number; name: string; coverImgUrl?: string; trackCount?: number; creator?: { nickname: string }; playCount?: number }
+interface UserResult { userId: number; nickname: string; avatarUrl?: string; signature?: string; followeds?: number }
+interface MvResult { id: number; name: string; cover?: string; imgurl?: string; imgurl16v9?: string; artistName?: string; playCount?: number; duration?: number }
+interface DjResult { id: number; name: string; picUrl?: string; desc?: string; programCount?: number; subCount?: number; dj?: { nickname?: string } }
+interface VideoResult { vid: string; title: string; coverUrl?: string; creator?: { nickname?: string; userName?: string }[]; playTime?: number; durationms?: number }
 
 const searchTabs: { key: SearchTab; label: string; icon: typeof Music }[] = [
   { key: 1, label: '歌曲', icon: Music },
   { key: 100, label: '歌手', icon: User },
   { key: 10, label: '专辑', icon: Disc },
   { key: 1000, label: '歌单', icon: List },
+  { key: 1002, label: '用户', icon: Users },
+  { key: 1004, label: 'MV', icon: Video },
+  { key: 1006, label: '歌词', icon: FileText },
+  { key: 1009, label: '电台', icon: Radio },
+  { key: 1014, label: '视频', icon: Video },
 ]
 
 const HISTORY_KEY = 'rannuan-search-history-v2'
@@ -50,6 +59,19 @@ function formatPlayCount(count: number): string {
   return `${count}`
 }
 
+function formatDuration(ms?: number): string {
+  if (!ms) return ''
+  const total = Math.floor(ms / 1000)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function creatorName(creators?: VideoResult['creator']) {
+  if (!Array.isArray(creators) || creators.length === 0) return ''
+  return creators.map((c) => c.nickname || c.userName).filter(Boolean).join(' / ')
+}
+
 const ANIMATION_DELAY_STEP = 0.03
 
 export default function SearchPage() {
@@ -57,7 +79,8 @@ export default function SearchPage() {
   const { setPlayList, setPlayListIndex } = usePlaylistStore()
   const inputRef = useRef<HTMLInputElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const suggestVersionRef = useRef(0)
 
   const [keyword, setKeyword] = useState('')
   const [activeTab, setActiveTab] = useState<SearchTab>(1)
@@ -65,6 +88,11 @@ export default function SearchPage() {
   const [artists, setArtists] = useState<ArtistResult[]>([])
   const [albums, setAlbums] = useState<AlbumResult[]>([])
   const [playlists, setPlaylists] = useState<PlaylistResult[]>([])
+  const [users, setUsers] = useState<UserResult[]>([])
+  const [mvs, setMvs] = useState<MvResult[]>([])
+  const [lyricSongs, setLyricSongs] = useState<SongResult[]>([])
+  const [djRadios, setDjRadios] = useState<DjResult[]>([])
+  const [videos, setVideos] = useState<VideoResult[]>([])
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [suggestIndex, setSuggestIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
@@ -96,9 +124,15 @@ export default function SearchPage() {
     setKeyword(value)
     setSuggestIndex(-1)
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    const version = ++suggestVersionRef.current
     if (!value.trim()) { setSuggestions([]); return }
     debounceRef.current = setTimeout(async () => {
-      try { setSuggestions(await getSearchSuggestions(value) || []) } catch { setSuggestions([]) }
+      try {
+        const next = await getSearchSuggestions(value) || []
+        if (suggestVersionRef.current === version) setSuggestions(next)
+      } catch {
+        if (suggestVersionRef.current === version) setSuggestions([])
+      }
     }, 300)
   }, [])
 
@@ -107,9 +141,20 @@ export default function SearchPage() {
     const q = (kw || keyword).trim()
     if (!q) return
     const searchType = type || activeTab
+    suggestVersionRef.current++
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setSuggestions([])
     setLoading(true)
     setSearched(true)
+    setSongs([])
+    setArtists([])
+    setAlbums([])
+    setPlaylists([])
+    setUsers([])
+    setMvs([])
+    setLyricSongs([])
+    setDjRadios([])
+    setVideos([])
     addHistory(q, searchType)
     setHistory(getHistory())
     try {
@@ -119,6 +164,11 @@ export default function SearchPage() {
       else if (searchType === 100) setArtists(result?.artists || [])
       else if (searchType === 10) setAlbums(result?.albums || [])
       else if (searchType === 1000) setPlaylists(result?.playlists || [])
+      else if (searchType === 1002) setUsers(result?.userprofiles || [])
+      else if (searchType === 1004) setMvs(result?.mvs || [])
+      else if (searchType === 1006) setLyricSongs(result?.songs || [])
+      else if (searchType === 1009) setDjRadios(result?.djRadios || result?.djradios || [])
+      else if (searchType === 1014) setVideos(result?.videos || [])
     } finally { setLoading(false) }
   }, [keyword, activeTab])
 
@@ -128,6 +178,8 @@ export default function SearchPage() {
   }, [keyword, doSearch])
 
   const handleSuggestClick = useCallback((s: string) => {
+    suggestVersionRef.current++
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setKeyword(s)
     setSuggestions([])
     doSearch(s, activeTab)
@@ -140,9 +192,22 @@ export default function SearchPage() {
     playSong(songs[0])
   }, [songs, setPlayList, setPlayListIndex])
 
+  const hasCurrentResults =
+    (activeTab === 1 && songs.length > 0) ||
+    (activeTab === 100 && artists.length > 0) ||
+    (activeTab === 10 && albums.length > 0) ||
+    (activeTab === 1000 && playlists.length > 0) ||
+    (activeTab === 1002 && users.length > 0) ||
+    (activeTab === 1004 && mvs.length > 0) ||
+    (activeTab === 1006 && lyricSongs.length > 0) ||
+    (activeTab === 1009 && djRadios.length > 0) ||
+    (activeTab === 1014 && videos.length > 0)
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       const sel = suggestIndex >= 0 && suggestions[suggestIndex] ? suggestions[suggestIndex] : keyword
+      suggestVersionRef.current++
+      if (debounceRef.current) clearTimeout(debounceRef.current)
       setSuggestions([])
       setSuggestIndex(-1)
       doSearch(sel, activeTab)
@@ -157,6 +222,8 @@ export default function SearchPage() {
   }
 
   const clearSearch = useCallback(() => {
+    suggestVersionRef.current++
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setKeyword('')
     setSearched(false)
     setSuggestions([])
@@ -164,6 +231,11 @@ export default function SearchPage() {
     setArtists([])
     setAlbums([])
     setPlaylists([])
+    setUsers([])
+    setMvs([])
+    setLyricSongs([])
+    setDjRadios([])
+    setVideos([])
   }, [])
 
   const tabLabel = searchTabs.find((t) => t.key === activeTab)?.label || ''
@@ -180,7 +252,7 @@ export default function SearchPage() {
             value={keyword}
             onChange={(e) => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="搜索歌曲、歌手、专辑、歌单..."
+            placeholder="搜索歌曲、歌手、专辑、歌单、用户、MV、电台..."
             className="w-full pl-12 pr-10 py-3.5 rounded-xl bg-gray-100 dark:bg-white/5 border-none outline-none focus:ring-2 focus:ring-[#e60026]/30 text-sm transition-shadow shadow-sm"
           />
           {keyword && (
@@ -250,7 +322,7 @@ export default function SearchPage() {
 
       {/* ═══ Empty Results ═══ */}
       {!loading && searched && !(
-        songs.length > 0 || artists.length > 0 || albums.length > 0 || playlists.length > 0
+        hasCurrentResults
       ) && (
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
           <Search className="w-16 h-16 mb-4 opacity-15" />
@@ -452,6 +524,168 @@ export default function SearchPage() {
                 </div>
                 <p className="mt-2.5 text-sm font-medium truncate leading-snug px-0.5">{p.name}</p>
                 <p className="text-xs text-gray-500 truncate px-0.5">{p.creator?.nickname} · {p.trackCount}首</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── Users ─── */}
+      {!loading && activeTab === 1002 && users.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-gray-400">{users.length} 位用户</span>
+          </div>
+          <div className="space-y-2">
+            {users.map((u, idx) => (
+              <div
+                key={u.userId}
+                className="flex items-center gap-3 rounded-xl bg-gray-50 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08] px-4 py-3 cursor-pointer transition-all animate-item"
+                style={{ animationDelay: `${(idx % 12) * ANIMATION_DELAY_STEP}s` }}
+                onClick={() => navigate(`/user/${u.userId}`)}
+              >
+                <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0">
+                  {u.avatarUrl ? <img src={avatarUrl(u.avatarUrl)} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    : <div className="w-full h-full flex items-center justify-center text-gray-400"><User className="w-5 h-5" /></div>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold truncate">{u.nickname}</p>
+                  {u.signature && <p className="text-xs text-gray-500 truncate mt-0.5">{u.signature}</p>}
+                </div>
+                {u.followeds !== undefined && <span className="text-xs text-gray-400">{formatPlayCount(u.followeds)} 粉丝</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── MVs ─── */}
+      {!loading && activeTab === 1004 && mvs.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-gray-400">{mvs.length} 个 MV</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {mvs.map((mv, idx) => (
+              <div
+                key={mv.id}
+                className="group cursor-pointer overflow-hidden rounded-xl bg-gray-50 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08] transition-all hover:-translate-y-0.5 animate-item"
+                style={{ animationDelay: `${(idx % 12) * ANIMATION_DELAY_STEP}s` }}
+                onClick={() => navigate(`/mv/${mv.id}`)}
+              >
+                <div className="relative aspect-video bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                  <img src={coverUrl(mv.cover || mv.imgurl16v9 || mv.imgurl || '')} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-white/95 flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Play className="w-5 h-5 text-[#e60026] ml-0.5" />
+                    </div>
+                  </div>
+                  {mv.playCount !== undefined && (
+                    <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white backdrop-blur-sm">
+                      <Headphones className="w-3 h-3" />{formatPlayCount(mv.playCount)}
+                    </div>
+                  )}
+                </div>
+                <div className="p-3">
+                  <p className="text-sm font-semibold truncate">{mv.name}</p>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{mv.artistName || 'MV'}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── Lyrics ─── */}
+      {!loading && activeTab === 1006 && lyricSongs.length > 0 && (
+        <>
+          <div className="sticky top-0 z-20 -mx-6 px-6 py-3 mb-4 bg-white/80 dark:bg-black/80 backdrop-blur-xl border-b border-gray-100 dark:border-white/[0.04]">
+            <span className="text-xs text-gray-400">{lyricSongs.length} 条歌词结果</span>
+          </div>
+          <div className="space-y-1">
+            {lyricSongs.map((song, idx) => (
+              <div
+                key={String(song.id)}
+                className="rounded-lg animate-item"
+                style={{ animationDelay: `${(idx % 15) * ANIMATION_DELAY_STEP}s` }}
+              >
+                <SongRow
+                  song={song}
+                  index={idx}
+                  onPlay={() => { setPlayList(lyricSongs); setPlayListIndex(idx); playSong(song) }}
+                />
+                {(song as any).lyrics && (
+                  <p className="ml-16 -mt-1 mb-2 text-xs leading-5 text-gray-400 line-clamp-2">
+                    {(song as any).lyrics}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── DJ Radios ─── */}
+      {!loading && activeTab === 1009 && djRadios.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-gray-400">{djRadios.length} 个电台</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {djRadios.map((dj, idx) => (
+              <div
+                key={dj.id}
+                className="cursor-pointer group rounded-xl overflow-hidden hover:shadow-lg transition-all hover:-translate-y-1 animate-item"
+                style={{ animationDelay: `${(idx % 10) * ANIMATION_DELAY_STEP}s` }}
+                onClick={() => navigate(`/dj/${dj.id}`)}
+              >
+                <div className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-xl overflow-hidden shadow-sm relative">
+                  <img src={coverUrl(dj.picUrl || '')} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                  {dj.programCount !== undefined && (
+                    <div className="absolute top-2 right-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white backdrop-blur-sm">
+                      {dj.programCount}期
+                    </div>
+                  )}
+                </div>
+                <p className="mt-2.5 text-sm font-medium truncate leading-snug px-0.5">{dj.name}</p>
+                <p className="text-xs text-gray-500 truncate px-0.5">{dj.dj?.nickname || dj.desc || `${formatPlayCount(dj.subCount || 0)}订阅`}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── Videos ─── */}
+      {!loading && activeTab === 1014 && videos.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-gray-400">{videos.length} 个视频</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {videos.map((v, idx) => (
+              <div
+                key={v.vid}
+                className="group cursor-pointer overflow-hidden rounded-xl bg-gray-50 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08] transition-all hover:-translate-y-0.5 animate-item"
+                style={{ animationDelay: `${(idx % 12) * ANIMATION_DELAY_STEP}s` }}
+                onClick={() => navigate(`/video/${v.vid}`)}
+              >
+                <div className="relative aspect-video bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                  <img src={coverUrl(v.coverUrl || '')} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-white/95 flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Play className="w-5 h-5 text-[#e60026] ml-0.5" />
+                    </div>
+                  </div>
+                  {v.durationms !== undefined && (
+                    <div className="absolute bottom-2 right-2 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
+                      {formatDuration(v.durationms)}
+                    </div>
+                  )}
+                </div>
+                <div className="p-3">
+                  <p className="text-sm font-semibold truncate">{v.title}</p>
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{creatorName(v.creator) || '视频'}</p>
+                </div>
               </div>
             ))}
           </div>

@@ -54,17 +54,23 @@ export default function LyricsPanel() {
           {lyric?.lrcArray?.length ? (
             <div className="space-y-4">
               {lyric.lrcArray.map((line, idx) => (
-                <p
+                <div
                   key={idx}
                   ref={idx === activeIndex ? activeRef : undefined}
-                  className={`text-sm transition-colors duration-300 ${
+                  className={`transition-colors duration-300 ${
                     idx === activeIndex
-                      ? 'text-[#e60026] font-medium text-base'
+                      ? 'text-[#e60026] font-medium'
                       : 'text-gray-400 dark:text-gray-500'
                   }`}
                 >
-                  {line.text}
-                </p>
+                  <p className={idx === activeIndex ? 'text-base' : 'text-sm'}>{line.text}</p>
+                  {(line.trText || line.romaText) && (
+                    <div className={`mt-1 space-y-0.5 ${idx === activeIndex ? 'text-xs text-[#e60026]/75' : 'text-[11px] text-gray-400/75 dark:text-gray-600'}`}>
+                      {line.trText && <p>{line.trText}</p>}
+                      {line.romaText && <p className="italic">{line.romaText}</p>}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           ) : (

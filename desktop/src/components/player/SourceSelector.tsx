@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { AVAILABLE_SOURCES, usePlayerStore } from '@shared'
 import { reparseWithSource } from '@/services/audioService'
 import { RefreshCw, ChevronDown, Antenna, Music, Disc3, Cloud, Globe, Loader } from 'lucide-react'
@@ -19,18 +20,39 @@ interface SourceSelectorProps {
 export default function SourceSelector({ className }: SourceSelectorProps) {
   const [show, setShow] = useState(false)
   const [reparsing, setReparsing] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const isLoading = usePlayerStore(s => s.isLoading)
+
+  const updateMenuPosition = useCallback(() => {
+    if (!ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    const width = 208
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width))
+    const top = Math.max(8, rect.top - 8)
+    setMenuPos({ top, left })
+  }, [])
 
   // click outside to close
   useEffect(() => {
     if (!show) return
+    updateMenuPosition()
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setShow(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
+      setShow(false)
     }
+    const handleReposition = () => updateMenuPosition()
     window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [show])
+    window.addEventListener('resize', handleReposition)
+    window.addEventListener('scroll', handleReposition, true)
+    return () => {
+      window.removeEventListener('mousedown', handler)
+      window.removeEventListener('resize', handleReposition)
+      window.removeEventListener('scroll', handleReposition, true)
+    }
+  }, [show, updateMenuPosition])
 
   const handleSelect = useCallback(async (source: string) => {
     setShow(false)
@@ -50,8 +72,12 @@ export default function SourceSelector({ className }: SourceSelectorProps) {
         <ChevronDown className={`w-2.5 h-2.5 ml-0.5 transition-transform ${show ? 'rotate-180' : ''}`} />
       </button>
 
-      {show && (
-        <div className="absolute bottom-full right-0 mb-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-white/[0.08] overflow-hidden z-[9999] animate-fade-in">
+      {show && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed w-52 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-white/[0.08] overflow-hidden z-[9999] animate-fade-in"
+          style={{ left: menuPos.left, top: menuPos.top, transform: 'translateY(-100%)' }}
+        >
           <div className="px-3 py-2 border-b border-gray-100 dark:border-white/[0.04]">
             <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">选择音源</span>
           </div>
@@ -84,7 +110,8 @@ export default function SourceSelector({ className }: SourceSelectorProps) {
               )
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

@@ -20,13 +20,14 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "ignoreDeprecations": "5.0",
 
-    "baseUrl": ".",
     "paths": {
       "@shared": ["../shared/src/index.ts"],
       "@shared/*": ["../shared/src/*"],
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"],
+      "axios": ["./node_modules/axios"],
+      "zustand": ["./node_modules/zustand"],
+      "zustand/middleware": ["./node_modules/zustand/middleware"]
     }
   },
   "include": ["src", "../shared/src"]

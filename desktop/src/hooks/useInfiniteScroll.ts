@@ -15,11 +15,14 @@ export function useInfiniteScroll(
 
   // 用 ref 持有最新值，避免 effect 依赖变化
   const loadMoreRef = useRef(loadMore)
-  loadMoreRef.current = loadMore
   const hasMoreRef = useRef(hasMore)
-  hasMoreRef.current = hasMore
   const loadingRef = useRef(loading)
-  loadingRef.current = loading
+
+  useEffect(() => {
+    loadMoreRef.current = loadMore
+    hasMoreRef.current = hasMore
+    loadingRef.current = loading
+  })
 
   useEffect(() => {
     const el = sentinelRef.current

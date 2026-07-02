@@ -47,8 +47,6 @@ interface PlaylistState {
   consecutiveFailCount: number; // P0-2: 连续播放失败计数
 }
 
-const MAX_CONSECUTIVE_FAILS = 5; // P0-2: 最大连续失败次数
-
 interface PlaylistActions {
   setPlayList: (list: SongResult[], keepIndex?: boolean) => void;
   addToNextPlay: (song: SongResult) => void;

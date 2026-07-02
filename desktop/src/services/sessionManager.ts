@@ -173,7 +173,6 @@ export async function restoreSession(): Promise<boolean> {
 
   if (!currentSong) {
     console.log('[Session] 未找到当前歌曲，作为第一首')
-    currentIndex = 0
     currentSong = playlist.playList[0] as SongResult
     usePlaylistStore.getState().setPlayListIndex(0)
   }

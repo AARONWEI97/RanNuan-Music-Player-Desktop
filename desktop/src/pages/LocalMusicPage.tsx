@@ -29,7 +29,11 @@ function loadMeta(): LocalSong[] {
 }
 function saveMeta(songs: LocalSong[]) {
   // strip transient fields before persisting
-  const clean = songs.map(({ _blobUrl, _missing, ...rest }) => rest)
+  const clean = songs.map(({ _blobUrl, _missing, ...rest }) => {
+    void _blobUrl
+    void _missing
+    return rest
+  })
   localStorage.setItem(META_KEY, JSON.stringify(clean))
 }
 

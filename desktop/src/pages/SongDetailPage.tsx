@@ -1,37 +1,14 @@
 import { useEffect, useState, useId } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { usePlayerStore, usePlaylistStore, getMusicLrc, getSimiSong, getMusicUrl, getNewComment } from '@shared'
-import { Play, Pause, SkipBack, SkipForward, Heart, ArrowLeft, MessageCircle, Music, Disc3, Download } from 'lucide-react'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
+import { usePlayerStore, usePlaylistStore, getMusicLrc, getSimiSong, getMusicUrl, getNewComment, getSongWiki, getSongCreators, getSongDynamicCover, getSongChorus, getSongCopyrightRcmd, getSongRedCount, getFirstListenInfo, parseLyric as parseApiLyric } from '@shared'
+import { Play, Pause, SkipBack, SkipForward, Heart, ArrowLeft, MessageCircle, Music, Disc3, Download, BookOpen } from 'lucide-react'
 import { togglePlay, playSong, seekTo } from '@/services/audioService'
 import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
 import SongRow from '@/components/common/SongRow'
 import CommentSection from '@/components/common/CommentSection'
 import { coverUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
-import type { SongResult } from '@shared'
-
-interface LyricLine { time: number; text: string }
-
-function parseLyric(lrc: string): LyricLine[] {
-  const lines = lrc.split('\n')
-  const result: LyricLine[] = []
-  const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g
-  for (const line of lines) {
-    const times: number[] = []
-    let match: RegExpExecArray | null
-    while ((match = timeRegex.exec(line)) !== null) {
-      const min = parseInt(match[1])
-      const sec = parseInt(match[2])
-      const ms = parseInt(match[3].padEnd(3, '0'))
-      times.push(min * 60000 + sec * 1000 + ms)
-    }
-    const text = line.replace(/\[.*?\]/g, '').trim()
-    if (text && times.length > 0) {
-      for (const t of times) result.push({ time: t, text })
-    }
-  }
-  return result.sort((a, b) => a.time - b.time)
-}
+import type { SongResult, ILyricText } from '@shared'
 
 function fmtMs(ms: number) {
   if (!ms || ms < 0) return '00:00'
@@ -39,7 +16,227 @@ function fmtMs(ms: number) {
   return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 }
 
+function formatCount(n?: number | null) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return ''
+  const value = Number(n)
+  if (value >= 100000000) return `${(value / 100000000).toFixed(1)}亿`
+  if (value >= 10000) return `${(value / 10000).toFixed(1)}万`
+  return `${value}`
+}
+
+function resolveFirstListenText(info: any) {
+  if (!info) return ''
+  if (typeof info === 'string') return info
+  const timestamp = info.firstListenTime || info.listenTime || info.time
+  if (typeof timestamp === 'number' && timestamp > 1000000000) {
+    return new Date(timestamp).toLocaleDateString('zh-CN')
+  }
+  return pickText(info)
+}
+
+function normalizeText(value: any) {
+  if (value === null || value === undefined) return ''
+  return String(value).replace(/\s+/g, ' ').trim()
+}
+
+function collectTexts(input: any, result: string[] = [], depth = 0) {
+  if (!input) return result
+  if (depth > 5) return result
+  if (typeof input === 'string') {
+    const text = normalizeText(input)
+    if (
+      text.length >= 12 &&
+      !/^https?:\/\//i.test(text) &&
+      !/^\/\//.test(text) &&
+      !/^[\d.:-]+$/.test(text)
+    ) {
+      result.push(text)
+    }
+    return result
+  }
+  if (Array.isArray(input)) {
+    input.forEach((item) => collectTexts(item, result, depth + 1))
+    return result
+  }
+  if (typeof input !== 'object') return result
+  Object.entries(input).forEach(([key, value]) => {
+    if (/url|pic|cover|image|avatar|icon|id|time|count|code|type|status/i.test(key)) return
+    collectTexts(value, result, depth + 1)
+  })
+  return result
+}
+
+function pickText(input: any) {
+  if (!input) return ''
+  if (typeof input === 'string') return normalizeText(input)
+  if (typeof input !== 'object') return normalizeText(input)
+
+  const priorityKeys = [
+    'summary',
+    'briefDesc',
+    'desc',
+    'description',
+    'content',
+    'text',
+    'lyric',
+    'lyricPart',
+    'title',
+    'name',
+  ]
+
+  for (const key of priorityKeys) {
+    const value = input?.[key]
+    if (typeof value === 'string' && normalizeText(value).length >= 2) return normalizeText(value)
+    if (Array.isArray(value)) {
+      const text = collectTexts(value).sort((a, b) => b.length - a.length)[0]
+      if (text) return text
+    }
+  }
+
+  return collectTexts(input).sort((a, b) => b.length - a.length)[0] || ''
+}
+
+function pickUrl(input: any) {
+  if (!input) return ''
+  if (typeof input === 'string') return input
+  return input.url || input.coverUrl || input.imageUrl || input.picUrl || input.src || input.imgUrl || ''
+}
+
+function pickCreatorNames(input: any) {
+  const list = Array.isArray(input) ? input : input?.creators || input?.data || input?.items || input?.songUserInfos || []
+  if (!Array.isArray(list)) return ''
+  return list
+    .slice(0, 4)
+    .map((item) => item?.name || item?.nickname || item?.userName || item?.artistName || item?.creatorName || item?.realName || item?.user?.nickname || '')
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function pickSongListText(input: any) {
+  const list = Array.isArray(input) ? input : input?.songs || input?.data || input?.items || input?.rcmdSongs || input?.songList || []
+  if (!Array.isArray(list)) return ''
+  return list
+    .slice(0, 3)
+    .map((item) => {
+      const song = item?.song || item
+      return song?.name || song?.songName || song?.title || song?.albumName || song?.artists?.map((a: any) => a?.name).filter(Boolean).join(' / ') || ''
+    })
+    .filter(Boolean)
+    .join(' · ')
+}
+
+type InfoItem = { label: string; value: string }
+
+function uniqueTexts(list: string[]) {
+  return Array.from(new Set(list.map(normalizeText).filter(Boolean)))
+}
+
+function getNodeTitle(node: any) {
+  const title = node?.uiElement?.mainTitle?.title ?? node?.mainTitle?.title ?? node?.title
+  return typeof title === 'string' ? normalizeText(title) : ''
+}
+
+function getTextLinkValues(node: any) {
+  const links = node?.uiElement?.textLinks ?? node?.textLinks ?? []
+  return Array.isArray(links) ? links.map((item) => item?.text).filter(Boolean) : []
+}
+
+function getButtonValues(node: any) {
+  const buttons = node?.uiElement?.buttons ?? node?.buttons ?? []
+  return Array.isArray(buttons) ? buttons.map((item) => item?.text).filter(Boolean) : []
+}
+
+function getResourceValues(resource: any) {
+  const images = resource?.uiElement?.images ?? []
+  return [
+    getNodeTitle(resource),
+    ...(Array.isArray(images) ? images.map((item) => item?.title).filter(Boolean) : []),
+    ...getTextLinkValues(resource),
+    ...getButtonValues(resource),
+  ].filter(Boolean)
+}
+
+function getCreativeValue(creative: any) {
+  const resources = Array.isArray(creative?.resources) ? creative.resources : []
+  return uniqueTexts([
+    ...resources.flatMap(getResourceValues),
+    ...getTextLinkValues(creative),
+    ...getButtonValues(creative),
+  ]).join(' / ')
+}
+
+function getWikiCreatives(wiki: any) {
+  const blocks = Array.isArray(wiki?.blocks) ? wiki.blocks : []
+  const basic = blocks.find((block: any) => block?.code === 'SONG_PLAY_ABOUT_SONG_BASIC')
+  return Array.isArray(basic?.creatives) ? basic.creatives : []
+}
+
+function pickWikiFacts(wiki: any): InfoItem[] {
+  const labels: Record<string, string> = {
+    songTag: '曲风',
+    songBizTag: '标签',
+    language: '语种',
+    bpm: 'BPM',
+    entertainment: '影视',
+    sheet: '乐谱',
+  }
+  return getWikiCreatives(wiki)
+    .map((creative: any) => {
+      const label = labels[creative?.creativeType]
+      const value = getCreativeValue(creative)
+      return label && value ? { label, value } : null
+    })
+    .filter(Boolean) as InfoItem[]
+}
+
+function pickWikiComment(wiki: any) {
+  const comment = getWikiCreatives(wiki).find((creative: any) => creative?.creativeType === 'songComment')
+  const resources = Array.isArray(comment?.resources) ? comment.resources : []
+  const descriptions = resources.flatMap((resource: any) => {
+    const list = resource?.uiElement?.descriptions ?? []
+    return Array.isArray(list) ? list.map((item) => item?.description || item?.title).filter(Boolean) : []
+  })
+  return normalizeText(descriptions[0] || '')
+}
+
+function pickWikiImage(wiki: any) {
+  const blocks = Array.isArray(wiki?.blocks) ? wiki.blocks : []
+  for (const block of blocks) {
+    const images = block?.uiElement?.images
+    if (Array.isArray(images)) {
+      const url = images.find((item: any) => item?.imageUrl)?.imageUrl
+      if (url) return url
+    }
+  }
+  return ''
+}
+
+function formatChorus(input: any) {
+  const start = input?.startTime ?? input?.start ?? input?.startMs ?? input?.chorusStartTime
+  const end = input?.endTime ?? input?.end ?? input?.endMs ?? input?.chorusEndTime
+  if (typeof start === 'number' && start > 0) {
+    return typeof end === 'number' && end > start ? `${fmtMs(start)} - ${fmtMs(end)}` : fmtMs(start)
+  }
+  return pickText(input)
+}
+
+function pickCount(input: any) {
+  if (typeof input === 'number') return input
+  const value = input?.count ?? input?.redCount ?? input?.total ?? input?.value
+  return typeof value === 'number' ? value : null
+}
+
 type DetailTab = 'lyrics' | 'comments' | 'similar'
+
+type SongMeta = {
+  wiki?: any
+  creators?: any
+  dynamicCover?: any
+  chorus?: any
+  copyrightRcmd?: any
+  redCount?: any
+  firstListen?: any
+}
 
 /* ─── 黑胶唱片 SVG 组件 ─── */
 function VinylDisc({ size = 220 }: { size?: number }) {
@@ -105,17 +302,30 @@ function VinylDisc({ size = 220 }: { size?: number }) {
 export default function SongDetailPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { id: routeSongId } = useParams<{ id: string }>()
+  const initialTab = new URLSearchParams(location.search).get('tab')
   const { playMusic, isPlay, currentProgress, duration, isLoading } = usePlayerStore()
   const { prevPlay, nextPlay, getCurrentSong } = usePlaylistStore()
-  const [tab, setTab] = useState<DetailTab>('lyrics')
-  const [lyrics, setLyrics] = useState<LyricLine[]>([])
+  const [tab, setTab] = useState<DetailTab>(
+    initialTab === 'comments' || initialTab === 'similar' ? initialTab : 'lyrics'
+  )
+  const [lyrics, setLyrics] = useState<ILyricText[]>([])
   const [commentTotal, setCommentTotal] = useState(0)
   const [similarSongs, setSimilarSongs] = useState<SongResult[]>([])
+  const [songMeta, setSongMeta] = useState<SongMeta>({ creators: [], copyrightRcmd: [] })
+  const [metaLoading, setMetaLoading] = useState(false)
   const [fav, setFav] = useState(false)
   const [hoverPct, setHoverPct] = useState<number | null>(null)
 
   const songId = playMusic?.id
   const coverImg = playMusic?.picUrl || playMusic?.al?.picUrl || playMusic?.album?.picUrl
+
+  useEffect(() => {
+    const nextTab = new URLSearchParams(location.search).get('tab')
+    if (nextTab === 'lyrics' || nextTab === 'comments' || nextTab === 'similar') {
+      setTab(nextTab)
+    }
+  }, [location.search])
 
   // 智能返回：有历史则返回，否则跳转到首页
   const handleBack = () => {
@@ -130,7 +340,9 @@ export default function SongDetailPage() {
   useEffect(() => { if (songId) setFav(isFavorite(Number(songId))) }, [songId])
   useEffect(() => {
     if (!songId) return
-    getMusicLrc(Number(songId)).then(r => setLyrics(parseLyric(r?.data?.lrc?.lyric || r?.data?.klyric?.lyric || '')))
+    let cancelled = false
+    setMetaLoading(true)
+    getMusicLrc(Number(songId)).then(r => setLyrics(parseApiLyric(r.data)?.lrcArray || []))
     // 预取评论总数，Tab 标签立即显示数字
     getNewComment({ id: Number(songId), type: 0, pageNo: 1, pageSize: 1, sortType: 2 }).then((r: any) => setCommentTotal(r?.data?.data?.totalCount || r?.data?.totalCount || r?.data?.total || 0))
     getSimiSong(Number(songId)).then(r => {
@@ -143,6 +355,30 @@ export default function SongDetailPage() {
         picUrl: s.picUrl || s.al?.picUrl || s.album?.picUrl || s.album?.pic_id || '',
       })))
     })
+    Promise.allSettled([
+      getSongWiki(Number(songId)),
+      getSongCreators(Number(songId)),
+      getSongDynamicCover(Number(songId)),
+      getSongChorus(Number(songId)),
+      getSongCopyrightRcmd(Number(songId)),
+      getSongRedCount(Number(songId)),
+      getFirstListenInfo(Number(songId)),
+    ]).then(([wiki, creators, dynamicCover, chorus, copyrightRcmd, redCount, firstListen]) => {
+      if (cancelled) return
+      setSongMeta({
+        wiki: wiki.status === 'fulfilled' ? (wiki.value?.data?.data ?? wiki.value?.data ?? null) : null,
+        creators: creators.status === 'fulfilled' ? (creators.value?.data?.data ?? creators.value?.data ?? []) : [],
+        dynamicCover: dynamicCover.status === 'fulfilled' ? (dynamicCover.value?.data?.data ?? dynamicCover.value?.data ?? null) : null,
+        chorus: chorus.status === 'fulfilled' ? (chorus.value?.data?.data ?? chorus.value?.data ?? null) : null,
+        copyrightRcmd: copyrightRcmd.status === 'fulfilled' ? (copyrightRcmd.value?.data?.data ?? copyrightRcmd.value?.data ?? []) : [],
+        redCount: redCount.status === 'fulfilled' ? (redCount.value?.data?.data ?? redCount.value?.data ?? null) : null,
+        firstListen: firstListen.status === 'fulfilled' ? (firstListen.value?.data?.data ?? firstListen.value?.data ?? null) : null,
+      })
+      setMetaLoading(false)
+    }).finally(() => {
+      if (!cancelled) setMetaLoading(false)
+    })
+    return () => { cancelled = true }
   }, [songId])
 
   const progress = duration > 0 ? (currentProgress / duration) * 100 : 0
@@ -151,6 +387,16 @@ export default function SongDetailPage() {
   const handlePrev = () => { prevPlay(); const s = getCurrentSong(); if (s) playSong(s) }
   const handleNext = () => { nextPlay(); const s = getCurrentSong(); if (s) playSong(s) }
   const handleFav = () => { if (!songId) return; setFav(toggleFavorite(playMusic!)) }
+  const handleTabChange = (nextTab: DetailTab) => {
+    setTab(nextTab)
+    const search = nextTab === 'lyrics' ? '' : `?tab=${nextTab}`
+    navigate({ pathname: location.pathname, search }, { replace: true })
+  }
+
+  useEffect(() => {
+    if (!songId || String(songId) === routeSongId) return
+    navigate(`/song/${songId}${location.search}`, { replace: true })
+  }, [songId, routeSongId, location.search, navigate])
   const handleProgressClick = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect()
     seekTo(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration)
@@ -189,24 +435,49 @@ export default function SongDetailPage() {
   // 当前歌词行
   const currentLyricIdx = lyrics.findIndex((l, i) => {
     const next = lyrics[i + 1]
-    return currentProgress >= l.time && (!next || currentProgress < next.time)
+    const start = l.startTime || 0
+    const nextStart = next?.startTime || 0
+    return currentProgress >= start && (!next || currentProgress < nextStart)
   })
 
   const hasCover = !!coverImg
+  const wikiFacts = pickWikiFacts(songMeta.wiki)
+  const wikiText = pickWikiComment(songMeta.wiki)
+  const chorusText = formatChorus(songMeta.chorus)
+  const redCount = pickCount(songMeta.redCount)
+  const firstListen = songMeta.firstListen
+  const dynamicCoverUrl = pickUrl(songMeta.dynamicCover) || pickWikiImage(songMeta.wiki)
+  const creatorText = pickCreatorNames(songMeta.creators)
+  const firstListenText = resolveFirstListenText(firstListen)
+  const copyrightText = pickSongListText(songMeta.copyrightRcmd)
+  const extraFacts: InfoItem[] = [
+    creatorText ? { label: '创作者', value: creatorText } : null,
+    chorusText ? { label: '副歌', value: chorusText } : null,
+    firstListenText ? { label: '首次听到', value: firstListenText } : null,
+    copyrightText ? { label: '替代版本', value: copyrightText } : null,
+  ].filter(Boolean) as InfoItem[]
+  const songInfoItems = [...wikiFacts, ...extraFacts]
+  const hasSongInfo = Boolean(wikiText || songInfoItems.length || dynamicCoverUrl)
+  const infoVisualUrl = dynamicCoverUrl || coverImg
 
   return (
-    <div className="-mx-6 -mt-6 -mb-24 relative flex flex-col select-none" style={{ minHeight: '100%' }}>
+    <div
+      className="-mx-6 -mt-6 relative flex flex-col select-none bg-white dark:bg-[#1a1a1a] overflow-hidden pb-1"
+    >
       {/* ═══ 背景层 ═══ */}
-      {hasCover && (
-        <>
-          <img src={coverUrl(coverImg)} alt="" className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-35 dark:opacity-20" />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/85 to-white dark:from-neutral-900/60 dark:via-neutral-900/88 dark:to-neutral-900" />
-        </>
-      )}
-      {!hasCover && <div className="absolute inset-0 bg-gradient-to-br from-[#e60026]/8 via-white to-white dark:from-[#e60026]/3 dark:via-neutral-900 dark:to-neutral-900" />}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[560px] overflow-hidden">
+        {hasCover ? (
+          <>
+            <img src={coverUrl(coverImg)} alt="" className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-35 dark:opacity-20" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/90 to-white dark:from-neutral-900/60 dark:via-neutral-900/90 dark:to-[#1a1a1a]" />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[#e60026]/8 via-white to-white dark:from-[#e60026]/3 dark:via-neutral-900 dark:to-[#1a1a1a]" />
+        )}
+      </div>
 
       {/* ═══ 主体内容 ═══ */}
-      <div className="relative z-10 flex flex-col items-center h-full max-w-lg mx-auto w-full px-5">
+      <div className="relative z-10 flex flex-col items-center max-w-lg mx-auto w-full px-5">
 
         {/* ── 顶部栏：返回 + 操作 ── */}
         <div className="flex items-center justify-between w-full pt-3 mb-1">
@@ -308,7 +579,7 @@ export default function SongDetailPage() {
             { k: 'comments' as DetailTab, l: `评论${commentTotal ? ` ${commentTotal}` : ''}`, i: MessageCircle },
             { k: 'similar' as DetailTab, l: `相似${similarSongs.length ? ` ${similarSongs.length}` : ''}`, i: Disc3 },
           ]).map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
+            <button key={t.k} onClick={() => handleTabChange(t.k)}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all duration-200 ${
                 tab === t.k ? 'bg-[#e60026] text-white shadow-sm shadow-red-500/20' : 'bg-gray-100 dark:bg-white/[0.05] text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'
               }`}>
@@ -318,7 +589,91 @@ export default function SongDetailPage() {
         </div>
 
         {/* ── Tab 内容 ── */}
-        <div className="w-full">
+        <div className="w-full min-h-[280px]">
+          {hasSongInfo && (
+            <section className="relative mb-4 overflow-hidden rounded-xl border border-black/[0.04] bg-[#fffaf7] shadow-[0_18px_50px_-34px_rgba(15,23,42,0.45)] dark:border-white/[0.06] dark:bg-[#211f1d]">
+              {infoVisualUrl && (
+                <img
+                  src={coverUrl(infoVisualUrl)}
+                  alt=""
+                  className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rotate-6 rounded-[28px] object-cover opacity-20 blur-[1px] dark:opacity-14"
+                />
+              )}
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#e60026]/45 to-transparent" />
+
+              <div className="relative p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#e60026]">
+                      <BookOpen className="h-3.5 w-3.5" />
+                      音乐百科
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100 line-clamp-1">
+                      {playMusic?.name || '当前歌曲'}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {redCount !== null && redCount !== undefined && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-[#e60026] shadow-sm ring-1 ring-[#e60026]/10 dark:bg-white/[0.06] dark:ring-[#e60026]/20">
+                        <Heart className="h-3.5 w-3.5 fill-current drop-shadow-sm" />
+                        {formatCount(redCount)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {songInfoItems.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {songInfoItems.map((item, index) => (
+                      <span
+                        key={`${item.label}-${item.value}`}
+                        className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] leading-5 ring-1 ${
+                          index % 4 === 0
+                            ? 'bg-[#e60026]/9 text-[#9f001b] ring-[#e60026]/12 dark:bg-[#e60026]/14 dark:text-red-200 dark:ring-[#e60026]/20'
+                            : index % 4 === 1
+                              ? 'bg-amber-50 text-amber-700 ring-amber-200/60 dark:bg-amber-400/10 dark:text-amber-200 dark:ring-amber-300/15'
+                              : index % 4 === 2
+                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/60 dark:bg-emerald-400/10 dark:text-emerald-200 dark:ring-emerald-300/15'
+                                : 'bg-sky-50 text-sky-700 ring-sky-200/60 dark:bg-sky-400/10 dark:text-sky-200 dark:ring-sky-300/15'
+                        }`}
+                        title={`${item.label}: ${item.value}`}
+                      >
+                        <span className="font-semibold">{item.label}</span>
+                        <span className="max-w-[220px] truncate opacity-85">{item.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {metaLoading ? (
+                  <div className="h-16 rounded-lg bg-white/55 px-3 py-3 dark:bg-white/[0.04]">
+                    <div className="mb-2 h-2.5 w-28 rounded-full bg-gray-200/80 dark:bg-white/[0.08]" />
+                    <div className="h-2.5 w-full rounded-full bg-gray-200/60 dark:bg-white/[0.06]" />
+                  </div>
+                ) : wikiText ? (
+                  <div className="relative rounded-lg bg-white/70 px-3.5 py-3 text-sm leading-6 text-gray-700 shadow-sm ring-1 ring-black/[0.03] dark:bg-black/15 dark:text-gray-200 dark:ring-white/[0.05]">
+                    <div className="absolute left-0 top-3 h-8 w-0.5 rounded-full bg-[#e60026]" />
+                    <p className="line-clamp-4 whitespace-pre-wrap pl-2">{wikiText}</p>
+                  </div>
+                ) : (
+                  infoVisualUrl && (
+                    <div className="flex items-center gap-3 rounded-lg bg-white/55 p-2.5 ring-1 ring-black/[0.03] dark:bg-white/[0.04] dark:ring-white/[0.05]">
+                      <img src={coverUrl(infoVisualUrl)} alt="" className="h-11 w-11 rounded-md object-cover" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 line-clamp-1">
+                          {playMusic?.al?.name || 'Track Notes'}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500 line-clamp-1">
+                          {playMusic?.ar?.map(a => a.name).join(' / ') || 'RanNuan Music'}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            </section>
+          )}
+
           {tab === 'lyrics' && (
             lyrics.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400">
@@ -331,16 +686,22 @@ export default function SongDetailPage() {
                 {lyrics.map((l, i) => {
                   const isActive = i === currentLyricIdx
                   return (
-                    <p key={i}
+                    <div key={i}
                       className={`cursor-pointer transition-all duration-300 px-3 rounded ${
                         isActive
                           ? 'text-[#e60026] font-bold text-lg scale-105 -translate-x-1'
                           : 'text-gray-400 dark:text-gray-500 text-sm opacity-65 hover:opacity-90'
                       }`}
-                      onClick={() => seekTo(l.time)}
+                      onClick={() => seekTo(l.startTime || 0)}
                       style={{ transformOrigin: 'left center' }}>
-                      {l.text}
-                    </p>
+                      <p>{l.text}</p>
+                      {(l.trText || l.romaText) && (
+                        <div className={`mt-1 space-y-0.5 ${isActive ? 'text-[13px] font-medium text-[#e60026]/75' : 'text-xs text-gray-400 dark:text-gray-600'}`}>
+                          {l.trText && <p>{l.trText}</p>}
+                          {l.romaText && <p className="italic">{l.romaText}</p>}
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
               </div>

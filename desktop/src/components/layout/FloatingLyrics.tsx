@@ -77,7 +77,7 @@ export default function FloatingLyrics() {
           <X className="w-3 h-3" />
         </button>
       </div>
-      <div className="h-[60px] overflow-hidden px-4 pb-3 text-center">
+      <div className="h-[76px] overflow-hidden px-4 pb-3 text-center">
         {lyric?.lrcArray?.length ? (
           <div className="space-y-1">
             {lyric.lrcArray.map((line, idx) => (
@@ -90,7 +90,12 @@ export default function FloatingLyrics() {
                     : 'text-white/40 text-sm'
                 }`}
               >
-                {line.text}
+                <div>{line.text}</div>
+                {idx === activeIndex && (line.trText || line.romaText) && (
+                  <div className="mt-0.5 text-xs font-normal text-white/65">
+                    {line.trText || line.romaText}
+                  </div>
+                )}
               </div>
             ))}
           </div>

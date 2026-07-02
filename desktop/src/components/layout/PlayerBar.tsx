@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { usePlayerStore, usePlaylistStore } from '@shared'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart, Loader2 } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume, setPlaybackRate } from '@/services/audioService'
 import { useRef, useCallback, useState } from 'react'
 import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
@@ -22,6 +22,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
   const { playMusic, isPlay, currentProgress, duration, volume, isMuted, isLoading, playbackRate } = usePlayerStore()
   const { playMode, setPlayMode, prevPlay, nextPlay, getCurrentSong, setShowPlaylistDrawer, playList } = usePlaylistStore()
   const dragging = useRef(false)
+  const volumeDragging = useRef(false)
 
   // ── hover states ──
   const [hoverProgress, setHoverProgress] = useState<number | null>(null)
@@ -74,6 +75,34 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
     usePlayerStore.getState().setVolume(v)
   }, [])
 
+  const updateVolumeFromClientX = useCallback((clientX: number) => {
+    const bar = document.getElementById('player-volume')
+    if (!bar) return
+    const rect = bar.getBoundingClientRect()
+    const v = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    setVolume(v)
+    const store = usePlayerStore.getState()
+    store.setVolume(v)
+    if (v > 0 && store.isMuted) store.setIsMuted(false)
+  }, [])
+
+  const handleVolumeMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    updateVolumeFromClientX(e.clientX)
+    volumeDragging.current = true
+    const mover = (ev: MouseEvent) => {
+      if (!volumeDragging.current) return
+      updateVolumeFromClientX(ev.clientX)
+    }
+    const up = () => {
+      volumeDragging.current = false
+      window.removeEventListener('mousemove', mover)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', mover)
+    window.addEventListener('mouseup', up)
+  }, [updateVolumeFromClientX])
+
   const handleVolumeWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const v = Math.max(0, Math.min(1, (volume || 0.5) + (e.deltaY > 0 ? -0.05 : 0.05)))
@@ -98,8 +127,8 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
           className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer group"
           onClick={() => {
             if (!playMusic?.id) return
-            // 已在 SongDetailPage → 智能返回；否则跳转
-            if (location.pathname.startsWith(`/song/${playMusic.id}`)) {
+            // 已在歌曲详情页时，点击封面关闭详情页；切歌后路由 id 可能还没同步，不能只按当前歌曲 id 判断。
+            if (/^\/song\/\d+/.test(location.pathname)) {
               if (location.key === 'default' || window.history.length <= 2) {
                 navigate('/', { replace: true })
               } else {
@@ -177,8 +206,14 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
               <div className="absolute inset-0 rounded-full animate-pulse-ring border-2 border-[#e60026]/30" style={{ animation: 'pulse-ring 1.5s ease-out infinite' }} />
             )}
             <button onClick={togglePlay}
+              aria-busy={isLoading}
+              title={isLoading ? '歌曲加载中' : (isPlay ? '暂停' : '播放')}
               className="relative w-9 h-9 flex items-center justify-center rounded-full bg-[#e60026] text-white hover:bg-[#c4001f] hover:shadow-lg hover:shadow-[#e60026]/25 active:scale-95 transition-all duration-150">
-              {isPlay ? <Pause className="w-[15px] h-[15px]" /> : <Play className="w-[15px] h-[15px] ml-0.5" />}
+              {isLoading
+                ? <Loader2 className="w-[15px] h-[15px] animate-spin" />
+                : isPlay
+                  ? <Pause className="w-[15px] h-[15px]" />
+                  : <Play className="w-[15px] h-[15px] ml-0.5" />}
             </button>
           </div>
 
@@ -265,8 +300,10 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
 
         {/* volume bar */}
         <div className="relative group flex items-center">
-          <div className="w-[72px] h-1 rounded-full bg-gray-200 dark:bg-gray-700/80 cursor-pointer group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors relative"
+          <div id="player-volume"
+            className="w-[72px] h-1 rounded-full bg-gray-200 dark:bg-gray-700/80 cursor-pointer group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors relative"
             onClick={handleVolumeClick}
+            onMouseDown={handleVolumeMouseDown}
             onWheel={handleVolumeWheel}>
             <div className="absolute top-0 left-0 h-full rounded-full bg-gray-400 dark:bg-gray-500 group-hover:bg-[#e60026] transition-colors"
               style={{ width: `${vol * 100}%` }} />

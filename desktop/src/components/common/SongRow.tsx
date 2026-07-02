@@ -40,7 +40,6 @@ const SongRow = memo(function SongRow({
   onToggleFavorite,
   onMore,
   inOwnPlaylist,
-  playlistId: _pid,
   onRemoveFromPlaylist,
   onReparse,
 }: SongRowProps) {

@@ -63,7 +63,7 @@ export const getMusicLrc = async (id: number) => {
 
 export const getParsingMusicUrl = async (
   id: number,
-  data: SongResult
+  _data: SongResult
 ): Promise<any> => {
   const adapter = getStorageAdapter();
   const token = await adapter.getItem(TOKEN_KEY);
@@ -179,7 +179,7 @@ export const getSongChorus = (id: number) => {
 };
 
 export const getSongCopyrightRcmd = (id: number) => {
-  return request.get('/song/copyright/rcmd', { params: { id } });
+  return request.get('/song/copyright/rcmd', { params: { songid: id } });
 };
 
 export const getSongRedCount = (id: number) => {

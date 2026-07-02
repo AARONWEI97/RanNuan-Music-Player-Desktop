@@ -1,4 +1,4 @@
-import type { IAlbumNew, IRecommendMusic, ISearchKeyword, IHotSearch, IList } from '../types';
+import type { IAlbumNew, IRecommendMusic, ISearchKeyword, IHotSearch } from '../types';
 import request from './request';
 
 interface IHotSingerParams {
