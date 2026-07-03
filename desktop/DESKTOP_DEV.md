@@ -1963,7 +1963,7 @@ npx tauri build                   # 重新打包
 
 | 检查项 | 说明 |
 |--------|------|
-| ✅ 版本号 | `package.json` / `Cargo.toml` / `tauri.conf.json` 三者统一 |
+| ✅ 版本号 | `package.json` / `package-lock.json` / `Cargo.toml` / `Cargo.lock` / `tauri.conf.json` 统一 |
 | ✅ 应用图标 | `npx tauri icon public/logo.png` 生成 |
 | ✅ Git 已推送 | `git push origin main` |
 | ✅ 安装包测试 | 实际安装并运行一次（NSIS 安装包图标不显示时可清除缓存重试） |
@@ -1975,7 +1975,7 @@ npx tauri build                   # 重新打包
 
 ### 24.4 版本号统一
 
-三个文件需保持一致：`package.json` / `Cargo.toml` / `tauri.conf.json`。UI 显示的版本读取自 `package.json`。
+版本发布前需保持一致：`package.json` / `package-lock.json` / `Cargo.toml` / `Cargo.lock` / `tauri.conf.json`。UI 显示的版本读取自 `package.json`，安装包版本读取自 `tauri.conf.json` / `Cargo.toml`。
 
 ---
 
@@ -2004,10 +2004,10 @@ npx tauri build                   # 重新打包
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `tauri.conf.json` | 修改 | `frontendDist: "../dist"` + `identifier: "com.rannuan.music"` + `targets: "nsis"` + `version: "1.5.0"` |
+| `tauri.conf.json` | 修改 | `frontendDist: "../dist"` + `identifier: "com.rannuan.music"` + `targets: "nsis"` + 版本号同步 |
 | `vite.config.ts` | 修改 | alias: `axios/zustand/zustand/middleware` 指向 `desktop/node_modules` |
-| `package.json` | 修改 | `build: "vite build"` (移除 tsc) + `version: "1.5.0"` |
-| `Cargo.toml` | 修改 | `version: "1.5.0"` + `tauri-plugin-opener` |
+| `package.json` | 修改 | `build: "vite build"` (移除 tsc) + 版本号同步 |
+| `Cargo.toml` | 修改 | 版本号同步 + `tauri-plugin-opener` |
 | `tsconfig.app.json` | 修改 | `ignoreDeprecations: "6.0"` |
 | `capabilities/default.json` | 修改 | `"opener:default"` |
 | `.gitignore` | **新建** | 排除 `node_modules/dist/target/.codebuddy` 等 |
@@ -2230,7 +2230,7 @@ npx tauri dev
 |------|------|------|
 | `npm run build`（desktop） | ✅ 通过 | Vite 前端构建通过 |
 | `cargo check`（desktop/src-tauri） | ✅ 通过 | 已通过；此前 Tauri stale target 绝对路径问题通过 `cargo clean` 修复 |
-| `npm run lint` | ⚠️ 未通过 | 仍有历史遗留 lint 问题，主要来自旧代码/React 19 规则和 `any` 类型，不是本轮改动新增 |
+| `npm run lint` | ✅ 0 error | 仍有历史 warning，主要来自旧代码的 `any` 类型和 Hook 依赖提示，不阻断发布 |
 
 ### 28.9 后续建议
 
@@ -2239,3 +2239,37 @@ npx tauri dev
 | P1 | 歌单管理继续增强 | 已补创建歌单和自建歌单删歌；继续补改封面/描述/标签、歌单内添加歌曲、排序、收藏者列表 |
 | P2 | 评论覆盖更多资源 | MV/视频已接入通用评论；继续扩到电台、专辑、歌单详情页 |
 | P3 | 消息中心/云盘/云贝 | API 文档支持，但与核心播放链路关系较弱，可后置 |
+
+---
+
+## 二十九、v3.0.0 发布准备 — 版本统一 & 用户页稳定性修复
+
+### 29.1 版本号同步
+
+| 文件 | 当前版本 | 说明 |
+|------|----------|------|
+| `desktop/package.json` | `3.0.0` | 前端包版本，TitleBar / SettingsPage 从这里读取 UI 版本 |
+| `desktop/package-lock.json` | `3.0.0` | npm lockfile 根包版本 |
+| `desktop/src-tauri/Cargo.toml` | `3.0.0` | Rust crate 版本 |
+| `desktop/src-tauri/Cargo.lock` | `3.0.0` | Rust lockfile 中 app 包版本 |
+| `desktop/src-tauri/tauri.conf.json` | `3.0.0` | Tauri 应用 / 安装包版本 |
+| `README.md` | `desktop-v3.0.0` | 项目徽章版本 |
+
+### 29.2 发布前最后一轮修复
+
+| 文件 | 改动 |
+|------|------|
+| `pages/UserPage.tsx` | 用户资料加载拆分：他人主页只加载目标用户公开数据；我的主页才加载当前账号等级、订阅统计和最近播放，避免数据串页 |
+| `pages/UserPage.tsx` | 增加资料加载失败提示、重试按钮、uid 切换时清空旧资料，避免接口失败时残留上一位用户数据 |
+| `components/common/FollowListModal.tsx` | 修复 render 阶段 setState，关注/粉丝 tab 切换更稳定 |
+| `components/common/FollowListModal.tsx` | 关注/粉丝列表改为分页加载，不再只展示前 100 条 |
+
+### 29.3 当前验证状态
+
+| 命令 | 状态 |
+|------|------|
+| `npm run lint`（desktop） | ✅ 0 error，仍有历史 warning |
+| `npm run build`（desktop） | ✅ 通过 |
+| `cargo check`（desktop/src-tauri） | ✅ 通过 |
+
+正式发布前建议再执行一次 `npm run tauri build`，并安装生成的 NSIS 包实际启动验证。

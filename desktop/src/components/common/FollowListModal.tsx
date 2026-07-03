@@ -4,6 +4,7 @@ import { getUserFollows, getUserFollowers, followUser } from '@shared'
 import { avatarUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
 import { useAuthStore } from '@/store/authStore'
+import LoadMore from '@/components/common/LoadMore'
 
 interface UserItem {
   userId: number
@@ -21,32 +22,46 @@ interface FollowListModalProps {
   onClose: () => void
 }
 
+const PAGE_SIZE = 50
+
 export default function FollowListModal({ open, uid, initialTab, onClose }: FollowListModalProps) {
   const [tab, setTab] = useState<'follows' | 'followers'>(initialTab)
   const [list, setList] = useState<UserItem[]>([])
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const selfUid = useAuthStore(s => s.profile?.userId || 0)
 
-  if (open && tab !== initialTab) {
-    setTab(initialTab)
-  }
+  useEffect(() => {
+    if (open) setTab(initialTab)
+  }, [initialTab, open])
 
-  const fetch = useCallback(async () => {
+  const fetchUsers = useCallback(async (nextOffset = 0) => {
     if (!uid) return
     setLoading(true)
     setError('')
+    if (nextOffset === 0) {
+      setList([])
+      setOffset(0)
+      setHasMore(true)
+    }
     try {
       let users: UserItem[] = []
       if (tab === 'follows') {
-        const res = await getUserFollows(uid, 100, 0) as { data?: { follow?: UserItem[]; data?: { follow?: UserItem[] } } }
+        const res = await getUserFollows(uid, PAGE_SIZE, nextOffset) as { data?: { follow?: UserItem[]; data?: { follow?: UserItem[] } } }
         users = res?.data?.follow || res?.data?.data?.follow || []
       } else {
-        const res = await getUserFollowers(uid, 100, 0) as { data?: { followeds?: UserItem[]; data?: { followeds?: UserItem[] } } }
+        const res = await getUserFollowers(uid, PAGE_SIZE, nextOffset) as { data?: { followeds?: UserItem[]; data?: { followeds?: UserItem[] } } }
         users = res?.data?.followeds || res?.data?.data?.followeds || []
       }
-      setList(Array.isArray(users) ? users : [])
+      const safeUsers = Array.isArray(users) ? users : []
+      setList(prev => nextOffset === 0 ? safeUsers : [...prev, ...safeUsers])
+      setOffset(nextOffset + safeUsers.length)
+      setHasMore(safeUsers.length >= PAGE_SIZE)
     } catch (e: unknown) {
+      if (nextOffset === 0) setList([])
+      setHasMore(false)
       setError(e instanceof Error ? e.message : '加载失败')
     } finally {
       setLoading(false)
@@ -54,8 +69,8 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
   }, [uid, tab])
 
   useEffect(() => {
-    if (open) fetch()
-  }, [open, fetch])
+    if (open) fetchUsers(0)
+  }, [open, fetchUsers])
 
   const handleFollow = async (item: UserItem) => {
     try {
@@ -99,14 +114,14 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
 
         {/* list */}
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {loading && list.length === 0 ? (
             <div className="flex justify-center py-12">
               <Loader className="w-6 h-6 animate-spin text-[#e60026]" />
             </div>
-          ) : error ? (
+          ) : error && list.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-gray-400">
               <p className="text-sm">{error}</p>
-              <button onClick={fetch} className="mt-2 text-xs text-[#e60026] hover:underline">重试</button>
+              <button onClick={() => fetchUsers(0)} className="mt-2 text-xs text-[#e60026] hover:underline">重试</button>
             </div>
           ) : list.length === 0 ? (
             <div className="flex flex-col items-center py-16 text-gray-400 dark:text-gray-500">
@@ -146,6 +161,13 @@ export default function FollowListModal({ open, uid, initialTab, onClose }: Foll
                   )}
                 </div>
               ))}
+              <LoadMore
+                loading={loading}
+                hasMore={hasMore}
+                error={!!error}
+                onLoadMore={() => fetchUsers(offset)}
+                onRetry={() => fetchUsers(offset)}
+              />
             </div>
           )}
         </div>

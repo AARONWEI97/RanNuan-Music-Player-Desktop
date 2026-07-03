@@ -16,13 +16,19 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/desktop-v2.0.0-e60026" />
+  <img src="https://img.shields.io/badge/desktop-v3.0.0-e60026" />
   <img src="https://img.shields.io/badge/ranran-v6.2-00ffff" />
 </p>
 
 ---
 
 > 🎵 一款基于 Tauri 2.x + React 19 + Vite 8 的跨平台桌面音乐播放器。内置 **ranran (冉冉) 3D 元宇宙相册**，将照片化为宇宙行星，搭配全息影院、情绪音乐推荐等沉浸式体验。
+
+---
+
+## 📦 当前版本
+
+**v3.0.0** — 桌面端功能补全与发布稳定版。重点包含电台/MV/视频闭环、歌曲详情页音乐百科与歌词增强、评论回复 UX 优化、播放队列交互修复、用户页资料编辑与关注/粉丝分页，以及发布前用户页数据串页修复。
 
 ---
 

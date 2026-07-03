@@ -25,7 +25,7 @@ import {
   User, FolderOpen, Settings, History,
   MessageCircle, TrendingUp, Download, Import, MoreHorizontal,
   Music, Crown, UserPlus, UserCheck,
-  Radio, Clock, MessageSquare, BadgeCheck, PenLine,
+  Radio, Clock, MessageSquare, BadgeCheck, PenLine, AlertCircle,
 } from 'lucide-react'
 
 /* ═══════════════════════════════════════════════════
@@ -76,10 +76,10 @@ interface UserProfile {
   followeds: number
   eventCount: number
   playlistCount: number
-  artistCount: number
-  mvCount: number
-  djRadioCount: number
-  programCount: number
+  artistCount?: number
+  mvCount?: number
+  djRadioCount?: number
+  programCount?: number
   level?: number
   levelProgress?: number
 }
@@ -236,6 +236,8 @@ export default function UserPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [bgImg, setBgImg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileError, setProfileError] = useState('')
+  const [profileReloadKey, setProfileReloadKey] = useState(0)
   const [tab, setTab] = useState<UTab>('created')
   const eventLastTimeRef = useRef<number>(-1)
 
@@ -364,15 +366,16 @@ export default function UserPage() {
 
     const loadProfile = async () => {
       setLoading(true)
+      setProfileError('')
+      setProfile(null)
+      setBgImg(null)
+      setRecords([])
+      setHistory([])
       try {
-        const [dr, sr, lr, rr, hr] = await Promise.all([
-          getUserDetail(uid), getUserSubcount(), getUserLevel(), getUserRecord(uid, 0), getRecentSongs(10),
-        ])
+        const dr = await getUserDetail(uid)
         if (cancelled) return
 
         const d = ((dr as { data?: Record<string, unknown> }).data ?? dr) as unknown as Record<string, unknown>
-        const s = ((sr as { data?: Record<string, unknown> }).data ?? sr) as unknown as Record<string, unknown>
-        const l = ((lr as { data?: Record<string, unknown> }).data ?? lr) as unknown as Record<string, unknown>
         const p = (d?.profile as Record<string, unknown> | undefined) || d
         setProfile({
           nickname: String(p?.nickname || ''),
@@ -387,28 +390,64 @@ export default function UserPage() {
           follows: Number(p?.follows || d?.follows || 0),
           followeds: Number(p?.followeds || d?.followeds || 0),
           eventCount: Number(p?.eventCount || d?.eventCount || 0),
-          playlistCount: Number(s?.createdPlaylistCount ?? 0),
-          artistCount: Number(s?.artistCount ?? 0),
-          mvCount: Number(s?.mvCount ?? 0),
-          djRadioCount: Number(s?.djRadioCount ?? 0),
-          programCount: Number(s?.programCount ?? 0),
-          level: Number((l?.data as Record<string, unknown> | undefined)?.level ?? l?.level ?? 0) || undefined,
-          levelProgress: Number((l?.data as Record<string, unknown> | undefined)?.progress ?? l?.progress ?? 0) || undefined,
+          playlistCount: Number(p?.playlistCount || d?.playlistCount || 0),
+          artistCount: isOwnPage ? 0 : undefined,
+          mvCount: isOwnPage ? 0 : undefined,
+          djRadioCount: isOwnPage ? 0 : undefined,
+          programCount: isOwnPage ? 0 : undefined,
         })
         const backgroundUrl = String(p?.backgroundUrl || '')
-        if (backgroundUrl) setBgImg(backgroundUrl)
+        setBgImg(backgroundUrl || null)
 
-        const rrData = (rr as { data?: { allData?: { song?: SongResult }[]; weekData?: { song?: SongResult }[] } })?.data
-        const rd = rrData?.allData || rrData?.weekData || []
-        setRecords(Array.isArray(rd) ? rd.flatMap(e => e.song ? [e.song] : []).slice(0, 10) : [])
+        const recordResult = await Promise.allSettled([getUserRecord(uid, 0)])
+        if (!cancelled && recordResult[0].status === 'fulfilled') {
+          const rr = recordResult[0].value
+          const rrData = (rr as { data?: { allData?: { song?: SongResult }[]; weekData?: { song?: SongResult }[] } })?.data
+          const rd = rrData?.allData || rrData?.weekData || []
+          setRecords(Array.isArray(rd) ? rd.flatMap(e => e.song ? [e.song] : []).slice(0, 10) : [])
+        }
 
-        const hrData = hr as { data?: { data?: { list?: Array<{ data?: SongResult } | SongResult> }; list?: Array<{ data?: SongResult } | SongResult> } }
-        const hd = hrData?.data?.data?.list || hrData?.data?.list || hrData?.data || []
-        setHistory(Array.isArray(hd)
-          ? hd.flatMap(e => ('data' in e && e.data) ? [e.data] : [e as SongResult]).slice(0, 10)
-          : [])
-      } catch {
-        // ignore
+        if (isOwnPage) {
+          const [subcountRes, levelRes, recentRes] = await Promise.allSettled([
+            getUserSubcount(),
+            getUserLevel(),
+            getRecentSongs(10),
+          ])
+          if (cancelled) return
+
+          if (subcountRes.status === 'fulfilled' || levelRes.status === 'fulfilled') {
+            const s = subcountRes.status === 'fulfilled'
+              ? (((subcountRes.value as { data?: Record<string, unknown> }).data ?? subcountRes.value) as unknown as Record<string, unknown>)
+              : {}
+            const l = levelRes.status === 'fulfilled'
+              ? (((levelRes.value as { data?: Record<string, unknown> }).data ?? levelRes.value) as unknown as Record<string, unknown>)
+              : {}
+            setProfile(prev => prev ? {
+              ...prev,
+              playlistCount: Number(s?.createdPlaylistCount ?? prev.playlistCount),
+              artistCount: Number(s?.artistCount ?? 0),
+              mvCount: Number(s?.mvCount ?? 0),
+              djRadioCount: Number(s?.djRadioCount ?? 0),
+              programCount: Number(s?.programCount ?? 0),
+              level: Number((l?.data as Record<string, unknown> | undefined)?.level ?? l?.level ?? prev.level ?? 0) || undefined,
+              levelProgress: Number((l?.data as Record<string, unknown> | undefined)?.progress ?? l?.progress ?? prev.levelProgress ?? 0) || undefined,
+            } : prev)
+          }
+
+          if (recentRes.status === 'fulfilled') {
+            const hr = recentRes.value
+            const hrData = hr as { data?: { data?: { list?: Array<{ data?: SongResult } | SongResult> }; list?: Array<{ data?: SongResult } | SongResult> } }
+            const hd = hrData?.data?.data?.list || hrData?.data?.list || hrData?.data || []
+            setHistory(Array.isArray(hd)
+              ? hd.flatMap(e => ('data' in e && e.data) ? [e.data] : [e as SongResult]).slice(0, 10)
+              : [])
+          }
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setProfileError(e instanceof Error ? e.message : '用户信息加载失败')
+          setProfile(null)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -416,7 +455,7 @@ export default function UserPage() {
 
     void loadProfile()
     return () => { cancelled = true }
-  }, [uid])
+  }, [uid, isOwnPage, profileReloadKey])
 
   const nav = useCallback((p: string) => navigate(p), [navigate])
 
@@ -536,6 +575,24 @@ export default function UserPage() {
           </div>
         </div>
       </div>
+
+      {profileError && !loading && (
+        <div className="px-6 pt-4">
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/15 dark:bg-red-500/10 dark:text-red-200">
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{profileError || '用户信息加载失败'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setProfileReloadKey(k => k + 1)}
+              className="flex-shrink-0 rounded-lg bg-white/70 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-white dark:bg-white/10 dark:text-red-100 dark:hover:bg-white/15"
+            >
+              重新加载
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ QUICK MENU (own profile tools) ═══ */}
       {isOwnPage && (
