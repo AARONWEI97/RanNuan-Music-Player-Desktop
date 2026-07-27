@@ -20,8 +20,6 @@ function getCache(): SongResult[] {
   return _cache
 }
 
-function invalidateCache() { _cache = null; _idSet = null }
-
 function getIdSet(): Set<string> {
   if (!_idSet) { _idSet = new Set(getCache().map(s => String(s.id))) }
   return _idSet
@@ -57,13 +55,15 @@ export function toggleFavorite(song: SongResult): boolean {
   const index = stored.findIndex((s) => s.id === song.id)
   if (index !== -1) {
     stored.splice(index, 1)
-    debouncedWrite(stored)
-    invalidateCache()
+    // 保留并同步内存缓存。写入 localStorage 虽然防抖，但 UI 读取不能
+    // 在这段时间内退回旧磁盘值，否则点击后会立即显示回未收藏。
+    _idSet = new Set(stored.map((s) => String(s.id)))
+    debouncedWrite([...stored])
     return false
   } else {
     stored.push(song)
-    debouncedWrite(stored)
-    invalidateCache()
+    _idSet = new Set(stored.map((s) => String(s.id)))
+    debouncedWrite([...stored])
     return true
   }
 }

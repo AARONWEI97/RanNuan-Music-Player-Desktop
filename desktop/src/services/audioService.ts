@@ -485,6 +485,11 @@ function preloadLyric(song: SongResult) {
     const parsed = parseLyric(apiLyric as Parameters<typeof parseLyric>[0])
     if (parsed) {
       song.lyric = parsed
+      // 歌词是播放后的异步数据，直接挂到歌曲对象不会触发 Zustand
+      // 订阅；副窗口需要这一帧才能从「暂无歌词」切换到真实歌词。
+      if (usePlayerStore.getState().playMusic?.id === song.id) {
+        usePlayerStore.getState().setPlayMusic({ ...song })
+      }
       console.log(`[Audio] Preloaded lyric for "${song.name}"`)
     }
   }).catch(() => {/* lyric preload is non-critical */})

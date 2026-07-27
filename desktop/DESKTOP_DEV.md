@@ -2273,3 +2273,130 @@ npx tauri dev
 | `cargo check`（desktop/src-tauri） | ✅ 通过 |
 
 正式发布前建议再执行一次 `npm run tauri build`，并安装生成的 NSIS 包实际启动验证。
+
+---
+
+## 三十、托盘自绘控制面板 & 独立桌面歌词窗
+
+> 托盘右键从「操作系统原生菜单」升级为自绘的马卡龙风悬浮面板，
+> 并顺带修掉了「关闭到托盘后桌面歌词消失」的缺陷。
+
+### 30.1 为什么必须删掉原生菜单
+
+托盘菜单由操作系统渲染，只能塞纯文本和分隔线 —— CSS、圆角、封面图、动画一概无法应用。
+之前用 `▶ ⏭ ⏮ ▣ ✕` 这些 Unicode 字符当图标，已经是原生菜单的天花板。
+
+**关键约束（已核对 tauri 2.11.2 源码）**：
+
+| 事实 | 位置 |
+|------|------|
+| `TrayIconBuilder` 只透传了 `menu_on_left_click` / `show_menu_on_left_click` | `tauri-2.11.2/src/tray/mod.rs:309,319` |
+| 底层 `tray-icon 0.23.1` 有 `menu_on_right_click` 字段（默认 `true`） | `tray-icon-0.23.1/src/lib.rs:186` |
+| **但 Tauri 没有暴露对应的 builder 方法** | grep 无结果 |
+
+结论：**只要调了 `.menu(&menu)`，Windows 右键就必弹原生菜单并盖住自绘面板**。
+因此完全不挂菜单，右键事件归自己处理。
+
+### 30.2 交互分工
+
+| 操作 | 行为 |
+|------|------|
+| **左键单击 / 双击托盘** | 恢复主窗口（保持既有行为不变） |
+| **右键单击托盘** | 切换自绘控制面板显隐 |
+| 面板失焦 | 自动收起（`WindowEvent::Focused(false)`） |
+| `Esc` | 关闭面板 |
+
+面板底部**必须**保留「显示主窗口 / 退出」—— 原生菜单删除后，那是退出应用的唯一入口。
+
+### 30.3 架构：跨窗口事件桥
+
+副窗口是独立 webview，**JS 上下文与主窗口完全隔离**，读不到 Zustand store。
+主窗口持有唯一的 `HTMLAudioElement`，是唯一真相源；副窗口是纯视图 + 命令发射器。
+
+```
+主窗口 (main)                      副窗口 (tray-panel / lyrics)
+─────────────                      ──────────────────────────
+audioService / stores ──emit──► "player:state" ──► 渲染
+   ▲                                                 │
+   └──listen── "panel:cmd" ◄──────emit───────────────┘
+        (toggle-play/next/prev/seek/fav/mode/lyrics)
+
+Rust ──emit──► "panel:viewers"        （可见副窗口数，0 时主窗口停止广播）
+Rust ──emit──► "panel:request-state"  （副窗口 show 前索要全量快照）
+```
+
+### 30.4 单 HTML 入口，按 query 分流
+
+不新增 HTML 文件。副窗口由 Rust 以 `index.html?w=xxx` 创建，`main.tsx` 顶部分流：
+
+```
+main.tsx
+ ├─ ?w=tray-panel → <TrayPanelApp />     // 纯视图，无 audio/session/shortcuts
+ ├─ ?w=lyrics     → <LyricsWindowApp />
+ └─ (默认)         → <App />              // 主窗口，唯一持有 audio
+```
+
+**关键**：`restoreSession` / `useGlobalShortcuts` / `useTrayEvents` / `audioService`
+绝不能在副窗口执行，否则会出现两个 audio 实例互相打架。
+
+### 30.5 桌面歌词修复（关到托盘后不再消失）
+
+| | 之前 ❌ | 之后 ✅ |
+|---|---------|---------|
+| 实现 | 主窗口内一个 `fixed` div | 独立置顶透明系统窗口 |
+| 主窗口 `hide()` 到托盘后 | **歌词一起消失** | **歌词仍在桌面显示并滚动** |
+| 文件 | `FloatingLyrics.tsx` 自己渲染浮层 | `windows/LyricsWindowApp.tsx` 承载；`FloatingLyrics` 降级为 `Ctrl+D` 触发器 |
+
+歌词窗是永久鼠标穿透、不可获取焦点的纯展示层，避免透明置顶窗口拦截主界面或其他应用的点击。
+播放控制和歌词开关由托盘面板 / 主窗口负责。
+
+### 30.6 文件变更清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `src-tauri/src/lib.rs` | **重写** | 删原生菜单；左右键分流；预建面板窗；`position_panel` 按 `work_area` 定位；`notify_viewers`；`open/close_lyrics_window`；`show_main_window`/`quit_app`；面板创建失败回退挂原生菜单 |
+| `src-tauri/capabilities/panel.json` | **新建** | `windows: ["tray-panel","lyrics"]` 最小权限集 |
+| `services/panelProtocol.ts` | **新建** | 跨窗口数据契约（快照 / 命令 / 事件名） |
+| `services/playerBridge.ts` | **新建** | 主窗口侧：节流 250ms 广播 + 命令分发 |
+| `services/panelClient.ts` | **新建** | 副窗口侧：`usePlayerSnapshot` / `sendCmd` / `resizeSelf`；带 `&mock=1` 浏览器预览假数据 |
+| `windows/TrayPanelApp.tsx` | **新建** | 面板 UI |
+| `windows/LyricsWindowApp.tsx` | **新建** | 独立桌面歌词窗 |
+| `main.tsx` | 重写 | 按 `?w=` 分流三个入口 |
+| `App.tsx` | 修改 | 挂载 `startPlayerBridge()` |
+| `components/layout/FloatingLyrics.tsx` | 重写 | 降级为 `Ctrl+D` 触发器，返回 `null` |
+| `index.css` | 修改 | 提取 `blobFloat1-3` 为全局；新增 `panelIn`/`lyricIn`/`coverFloat`/`pulseRing`/`coverFade`；`.transparent-window` |
+
+### 30.7 关键设计决策
+
+1. **面板高度自适应**：队列收起 380px、展开 500px，由面板自己 `resizeSelf` 调整并保持底边不动。
+   收起时窗口就是内容的高度，不留空白。
+2. **零观众不广播**：Rust 用 `notify_viewers` 汇报可见副窗口数，为 0 时主窗口停止 emit，
+   避免播放期间每秒 4 次无谓 IPC。
+3. **`position_panel` 读实际尺寸**：面板会自行 `setSize`，所以用 `outer_size()` 而非常量，
+   否则展开状态下再次打开会算错位置。
+4. **`work_area` 而非 `size`**：工作区已排除任务栏，任务栏停靠在上/下/左/右都不会遮住面板。
+5. **桥是真单例、不提供 teardown**：Tauri `listen` 是异步注册的，若在 StrictMode 双次挂载中
+   拆掉标志却没同步注销，会出现两份 `panel:cmd` 处理器 —— 一次「下一首」跳两首歌。
+6. **回退兜底**：面板窗创建失败则 `eprintln!` 并回退挂载原生菜单，保证任何情况下都能退出应用。
+
+### 30.8 浏览器预览面板
+
+副窗口平时靠主窗口广播喂数据，直接开 URL 会一片空白。加 `&mock=1` 用内置假数据渲染，
+方便调样式（仅 dev 生效，生产构建会被摇树掉）：
+
+```
+http://localhost:5173/index.html?w=tray-panel&mock=1
+http://localhost:5173/index.html?w=lyrics&mock=1
+```
+
+### 30.9 验证状态
+
+| 项 | 状态 |
+|----|------|
+| `cargo check` | ✅ 通过 |
+| `npx tsc --noEmit` | ✅ 0 error |
+| `npm run build` | ✅ 通过 |
+| `eslint`（本次改动文件） | ✅ 0 问题 |
+| 面板 / 歌词窗浏览器渲染 | ✅ 已截图确认 |
+| `npx tauri dev` 启动 | ✅ 无错误，未触发原生菜单回退 |
+| 托盘左右键实机交互 | ⚠️ 需人工点击验证 |

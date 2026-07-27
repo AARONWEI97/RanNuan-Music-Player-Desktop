@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getStorageAdapter } from '../storageAdapter';
+import { lazyStorageAdapter } from '../storageAdapter';
 import { setApiBaseUrl as setRequestApiBaseUrl } from '../api/request';
 import type { ThemeType } from '../constants';
 
@@ -56,7 +56,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     }),
     {
       name: 'settings-store',
-      storage: createJSONStorage(() => getStorageAdapter()),
+      storage: createJSONStorage(() => lazyStorageAdapter),
     }
   )
 );

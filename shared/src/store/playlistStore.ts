@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { SongResult } from '../types';
-import { getStorageAdapter } from '../storageAdapter';
+import { lazyStorageAdapter } from '../storageAdapter';
 import { usePlayerStore } from './playerStore';
 
 type MinifiedSong = Pick<SongResult, 'id' | 'name' | 'picUrl' | 'dt' | 'duration' | 'source'> & {
@@ -311,7 +311,7 @@ export const usePlaylistStore = create<PlaylistState & PlaylistActions>()(
     }),
     {
       name: 'playlist-store',
-      storage: createJSONStorage(() => getStorageAdapter()),
+      storage: createJSONStorage(() => lazyStorageAdapter),
       partialize: (state) => ({
         playList: minifySongList(state.playList),
         playListIndex: state.playListIndex,

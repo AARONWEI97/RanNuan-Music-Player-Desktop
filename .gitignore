@@ -11,6 +11,7 @@ desktop/src-tauri/target/
 .idea/
 *.code-workspace
 .codebuddy/
+.claude/
 
 # ── OS ──
 .DS_Store

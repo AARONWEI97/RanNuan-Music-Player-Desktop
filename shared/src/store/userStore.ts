@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getStorageAdapter } from '../storageAdapter';
+import { getStorageAdapter, lazyStorageAdapter } from '../storageAdapter';
 import { TOKEN_KEY } from '../api/request';
 import {
   getUserAccount,
@@ -224,7 +224,7 @@ export const useUserStore = create<UserState & UserActions>()(
     }),
     {
       name: 'user-store',
-      storage: createJSONStorage(() => getStorageAdapter()),
+      storage: createJSONStorage(() => lazyStorageAdapter),
       partialize: (state) => ({
         user: state.user
           ? {

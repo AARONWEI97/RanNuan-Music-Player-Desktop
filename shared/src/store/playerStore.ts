@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { SongResult } from '../types';
-import { getStorageAdapter } from '../storageAdapter';
+import { lazyStorageAdapter } from '../storageAdapter';
 
 interface PlayerState {
   playMusic: SongResult | null;
@@ -64,7 +64,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
     }),
     {
       name: 'player-state',
-      storage: createJSONStorage(() => getStorageAdapter()),
+      storage: createJSONStorage(() => lazyStorageAdapter),
       partialize: (state) => ({
         playMusic: state.playMusic ? {
           id: state.playMusic.id,

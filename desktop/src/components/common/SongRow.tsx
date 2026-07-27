@@ -71,11 +71,17 @@ const SongRow = memo(function SongRow({
 
   const handleToggleFav = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    if (onToggleFavorite) { onToggleFavorite(); return }
+    // 父页面有回调时仍要立即更新本行的本地状态；收藏存储本身不是
+    // React/Zustand store，单靠回调不会触发 SongRow 重渲染。
+    if (onToggleFavorite) {
+      onToggleFavorite()
+      setFav(!fav)
+      return
+    }
     const added = toggleFavorite(song)
     setFav(added) // ★ 立即更新 UI，无需刷新
     showToast(added ? '已收藏' : '已取消收藏', song.name)
-  }, [onToggleFavorite, song])
+  }, [fav, onToggleFavorite, song])
 
   const openMenu = useCallback((x: number, y: number) => {
     setMenuOpen(true)
@@ -97,8 +103,9 @@ const SongRow = memo(function SongRow({
         label: fav ? '取消收藏' : '收藏',
         icon: <Heart className={`w-4 h-4 ${fav ? 'fill-[#e60026] text-[#e60026]' : ''}`} />,
         onClick: () => {
-          toggleFavorite(song)
-          showToast(fav ? '已取消收藏' : '已收藏', song.name)
+          const added = toggleFavorite(song)
+          setFav(added)
+          showToast(added ? '已收藏' : '已取消收藏', song.name)
         },
       },
       { label: '', divider: true, onClick: () => {} },

@@ -7,6 +7,7 @@ import { KeepAliveRoutes } from './components/layout/KeepAlive'
 import StartupModals from './components/common/StartupModals'
 import { restoreSession } from '@/services/sessionManager'
 import { useTrayEvents } from '@/hooks/useTrayEvents'
+import { startPlayerBridge } from '@/services/playerBridge'
 import SplashScreen from './components/common/SplashScreen'
 
 function App() {
@@ -20,6 +21,9 @@ function App() {
 
   // ★ 托盘菜单事件监听（播放/暂停、上/下一首）
   useTrayEvents()
+
+  // ★ 向托盘面板 / 桌面歌词副窗口广播播放状态，并接收它们回发的命令
+  useEffect(() => { startPlayerBridge() }, [])
 
   useEffect(() => {
     if (apiBaseUrl) setApiBaseUrl(apiBaseUrl)

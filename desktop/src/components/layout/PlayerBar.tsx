@@ -27,12 +27,16 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
   // ── hover states ──
   const [hoverProgress, setHoverProgress] = useState<number | null>(null)
   const [favPop, setFavPop] = useState(false)
+  const [favoriteVersion, setFavoriteVersion] = useState(0)
 
-  const fav = playMusic?.id ? isFavorite(playMusic.id) : false
+  // 收藏存储是 localStorage + 普通模块缓存，不会主动触发 React 重渲染。
+  // 用本地版本号让点击收藏后立即重新读取状态。
+  const fav = favoriteVersion >= 0 && playMusic?.id ? isFavorite(playMusic.id) : false
 
   const handleToggleFavorite = useCallback(() => {
     if (!playMusic) return
     const added = toggleFavorite(playMusic)
+    setFavoriteVersion((v) => v + 1)
     if (added) {
       setFavPop(true)
       setTimeout(() => setFavPop(false), 400)
