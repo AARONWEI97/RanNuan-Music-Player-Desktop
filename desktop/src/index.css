@@ -166,6 +166,7 @@ body {
 
 /* 副窗口是 transparent 的，圆角和阴影全靠 CSS，body 必须完全透明。
    由 main.tsx 在分流到副窗口时给 <body> 加上这个 class。 */
+html.transparent-window,
 body.transparent-window,
 body.transparent-window #root {
   background: transparent !important;
@@ -229,6 +230,160 @@ body.transparent-window #root {
 .animate-pulse-ring {
   animation: pulseRing 2s ease-out infinite;
 }
+
+/* 桌面歌词：仅在鼠标靠近时展开控制条，歌词本身始终保持干净。 */
+.lyric-window-toolbar {
+  min-height: 36px;
+  padding: 4px 6px;
+  border: 1.5px solid rgba(57, 38, 45, 0.9);
+  border-radius: 11px 9px 12px 8px;
+  background: rgba(255, 248, 242, 0.96);
+  box-shadow: 2px 3px 0 rgba(57, 38, 45, 0.62), 0 8px 22px rgba(0, 0, 0, 0.23);
+  backdrop-filter: blur(14px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.96);
+  transform-origin: top left;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.lyric-window:hover .lyric-window-toolbar,
+.lyric-window:focus-within .lyric-window-toolbar,
+.lyric-window-controls-visible .lyric-window-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.lyric-window-button,
+.lyric-window-resize-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px 6px 8px 5px;
+  color: #493640;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.lyric-window-button:hover,
+.lyric-window-button:focus-visible,
+.lyric-window-resize-handle:hover,
+.lyric-window-resize-handle:focus-visible {
+  color: #3f2934;
+  border-color: rgba(73, 54, 64, 0.7);
+  background: #f4c7d5;
+  box-shadow: 1px 1px 0 rgba(73, 54, 64, 0.72);
+  outline: none;
+}
+
+.lyric-window-button:active,
+.lyric-window-resize-handle:active {
+  transform: scale(0.9);
+}
+
+.lyric-window-button[data-active] {
+  color: #fff9f5;
+  border-color: #8f234a;
+  background: #bd3a67;
+  box-shadow: 1px 1px 0 #71213e;
+}
+
+.lyric-window-button[data-danger]:hover,
+.lyric-window-button[data-danger]:focus-visible {
+  color: #fff;
+  border-color: #9b243d;
+  background: #d84662;
+}
+
+.lyric-window-divider {
+  width: 1px;
+  height: 15px;
+  margin: 0 2px;
+  background: rgba(73, 54, 64, 0.28);
+}
+
+.lyric-window-drag-hint {
+  width: 13px;
+  height: 5px;
+  margin: 0 2px 0 1px;
+  border-radius: 99px;
+  background: rgba(73, 54, 64, 0.52);
+}
+
+.lyric-window-resize-handle {
+  opacity: 0;
+  cursor: nwse-resize;
+}
+
+.lyric-window:hover .lyric-window-resize-handle,
+.lyric-window:focus-within .lyric-window-resize-handle,
+.lyric-window-controls-visible .lyric-window-resize-handle {
+  opacity: 0.72;
+}
+
+.lyric-window[data-locked] .lyric-window-resize-handle {
+  display: none;
+}
+
+/* 以不规则笔触绘制歌词窗控制图标，避免与主界面的图标库混在一起。 */
+.sketch-icon {
+  position: relative;
+  display: block;
+  width: 15px;
+  height: 15px;
+  color: currentColor;
+}
+
+.sketch-icon::before,
+.sketch-icon::after {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  content: '';
+}
+
+.sketch-icon-prev::before,
+.sketch-icon-next::before,
+.sketch-icon-play::before {
+  top: 2px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.sketch-icon-prev::before { left: 1px; border-right: 8px solid currentColor; }
+.sketch-icon-prev::after { top: 2px; left: 11px; width: 2px; height: 11px; border-radius: 1px; background: currentColor; }
+.sketch-icon-next::before { right: 1px; border-left: 8px solid currentColor; }
+.sketch-icon-next::after { top: 2px; left: 2px; width: 2px; height: 11px; border-radius: 1px; background: currentColor; }
+.sketch-icon-play::before { left: 5px; border-left: 8px solid currentColor; }
+.sketch-icon-pause::before,
+.sketch-icon-pause::after { top: 2px; width: 3px; height: 11px; border-radius: 2px 1px; background: currentColor; }
+.sketch-icon-pause::before { left: 3px; transform: rotate(2deg); }
+.sketch-icon-pause::after { right: 3px; transform: rotate(-2deg); }
+
+.sketch-icon-lock::before,
+.sketch-icon-unlock::before { bottom: 1px; left: 2px; width: 11px; height: 9px; border: 2px solid currentColor; border-radius: 3px 2px 3px 2px; }
+.sketch-icon-lock::after,
+.sketch-icon-unlock::after { top: 0; left: 4px; width: 7px; height: 8px; border: 2px solid currentColor; border-bottom: 0; border-radius: 6px 5px 0 0; }
+.sketch-icon-unlock::after { left: 7px; transform: rotate(12deg); transform-origin: bottom left; }
+
+.sketch-icon-app::before { top: 2px; left: 1px; width: 13px; height: 11px; border: 2px solid currentColor; border-radius: 3px 2px 3px 2px; }
+.sketch-icon-app::after { top: 5px; left: 3px; width: 9px; height: 1px; background: currentColor; }
+
+.sketch-icon-close::before,
+.sketch-icon-close::after { top: 7px; left: 1px; width: 13px; height: 2px; border-radius: 2px; background: currentColor; }
+.sketch-icon-close::before { transform: rotate(43deg); }
+.sketch-icon-close::after { transform: rotate(-47deg); }
+
+.sketch-icon-resize::before { right: 1px; bottom: 1px; width: 10px; height: 10px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; }
+.sketch-icon-resize::after { right: 4px; bottom: 4px; width: 5px; height: 5px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-panel-in,

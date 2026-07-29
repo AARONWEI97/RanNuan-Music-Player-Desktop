@@ -119,6 +119,38 @@ export function hideSelf() {
 }
 
 /**
+ * 歌词窗自身的播放按钮走 Rust 中继，避免 Windows WebView2 下副窗口直接
+ * emit 偶发丢失导致的“按钮点了没反应”。
+ */
+export async function sendLyricsPlayerCommand(cmd: Extract<PanelCommand, { type: 'toggle-play' | 'next' | 'prev' }>) {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('lyrics_player_command', { command: cmd })
+}
+
+export async function setLyricsWindowLocked(locked: boolean): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<boolean>('set_lyrics_window_locked', { locked })
+}
+
+export async function getLyricsWindowLocked(): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<boolean>('is_lyrics_window_locked')
+}
+
+/** 锁定时前端用 mouse leave 通知 Rust 恢复鼠标穿透。 */
+export async function setLyricsWindowHovering(hovering: boolean): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('set_lyrics_window_hovering', { hovering })
+}
+
+/** 关闭桌面歌词，并让 Rust 同步副窗口的可见状态。 */
+export function closeLyricsWindow() {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('close_lyrics_window'))
+    .catch((e) => console.error('[lyrics] closeLyricsWindow 失败:', e))
+}
+
+/**
  * 调整当前副窗口高度（宽度不变）。
  *
  * 队列展开/收起时用来让窗口贴合内容，避免收起时留一大块空白。

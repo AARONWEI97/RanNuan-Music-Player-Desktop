@@ -26,6 +26,7 @@
     "core:window:allow-set-max-size",
     "core:window:allow-outer-size",
     "core:window:allow-outer-position",
-    "opener:default"
+    "opener:default",
+    "global-shortcut:default"
   ]
 }

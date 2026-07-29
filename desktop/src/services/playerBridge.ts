@@ -300,8 +300,12 @@ export function startPlayerBridge() {
       if (e.payload) handleCommand(e.payload)
     })
     // force=true：此刻副窗口尚未 show，consumers 还是 0，但正需要这一帧
-    listen(EVT_REQUEST_STATE, () => pushPlayerState(true, true))
-    listen<number>(EVT_VIEWERS, (e) => {
+      listen(EVT_REQUEST_STATE, () => pushPlayerState(true, true))
+      listen<boolean>('lyrics:visible-state', (e) => {
+        lyricsOpen = e.payload
+        pushPlayerState(true, true)
+      })
+      listen<number>(EVT_VIEWERS, (e) => {
       consumers = e.payload ?? 0
       // 当所有副窗口都不可见时，向 Rust 确认一次歌词窗真实状态，
       // 而不是粗暴地把 lyricsOpen 设为 false。

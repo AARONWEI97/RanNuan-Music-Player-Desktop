@@ -2345,10 +2345,14 @@ main.tsx
 |---|---------|---------|
 | 实现 | 主窗口内一个 `fixed` div | 独立置顶透明系统窗口 |
 | 主窗口 `hide()` 到托盘后 | **歌词一起消失** | **歌词仍在桌面显示并滚动** |
-| 文件 | `FloatingLyrics.tsx` 自己渲染浮层 | `windows/LyricsWindowApp.tsx` 承载；`FloatingLyrics` 降级为 `Ctrl+D` 触发器 |
+| 文件 | `FloatingLyrics.tsx` 自己渲染浮层 | `windows/LyricsWindowApp.tsx` 承载；`FloatingLyrics` 仅保留兼容空壳 |
 
-歌词窗是永久鼠标穿透、不可获取焦点的纯展示层，避免透明置顶窗口拦截主界面或其他应用的点击。
-播放控制和歌词开关由托盘面板 / 主窗口负责。
+歌词窗无论是否锁定都保持置顶。锁定时启用鼠标穿透并禁止移动、调整尺寸；系统鼠标进入窗口范围后，
+Rust 会临时恢复输入以展示控制条，离开后重新启用穿透。解锁后可拖动、调整尺寸，窗口尺寸会持久化。
+
+`Ctrl+D` 用于全局开关歌词窗，`Ctrl+Alt+L` 用于全局切换锁定状态；两者都由 Rust 全局快捷键插件直接处理，
+不依赖主窗口 WebView。
+前端不得调用 `unregisterAll()`，也不得再注册页面内 `Ctrl+D` fallback，否则会造成启动后失效或一次按键切换两次。
 
 ### 30.6 文件变更清单
 
@@ -2363,7 +2367,8 @@ main.tsx
 | `windows/LyricsWindowApp.tsx` | **新建** | 独立桌面歌词窗 |
 | `main.tsx` | 重写 | 按 `?w=` 分流三个入口 |
 | `App.tsx` | 修改 | 挂载 `startPlayerBridge()` |
-| `components/layout/FloatingLyrics.tsx` | 重写 | 降级为 `Ctrl+D` 触发器，返回 `null` |
+| `components/layout/FloatingLyrics.tsx` | 重写 | 兼容现有布局结构的空组件，返回 `null` |
+| `hooks/useGlobalShortcuts.ts` | 修改 | 仅注册媒体键；歌词快捷键由 Rust 原生层负责 |
 | `index.css` | 修改 | 提取 `blobFloat1-3` 为全局；新增 `panelIn`/`lyricIn`/`coverFloat`/`pulseRing`/`coverFade`；`.transparent-window` |
 
 ### 30.7 关键设计决策

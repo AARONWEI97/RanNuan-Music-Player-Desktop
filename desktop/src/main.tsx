@@ -30,6 +30,7 @@ const root = createRoot(document.getElementById('root')!)
 if (view === 'tray-panel' || view === 'lyrics') {
   // 副窗口是 transparent 的，去掉默认底色让 CSS 圆角/阴影生效
   document.body.classList.add('transparent-window')
+  document.documentElement.classList.add('transparent-window')
 
   if (view === 'tray-panel') {
     import('./windows/TrayPanelApp').then(({ default: TrayPanelApp }) => {

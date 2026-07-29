@@ -1,6 +1,7 @@
 use std::process::Command;
-use std::sync::Mutex;
+use std::{sync::Mutex, time::Duration};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, ShortcutState};
 
 // ═══════════════ 副窗口标签 ═══════════════
 const PANEL_LABEL: &str = "tray-panel";
@@ -18,6 +19,13 @@ const LYRICS_H: f64 = 200.0;
 // ═══════════════ 托盘句柄状态（跨线程安全，用于动态更新 tooltip）═══════════════
 struct TrayState {
     handle: Mutex<Option<tauri::tray::TrayIcon>>,
+}
+
+/// 独立歌词窗的原生交互状态。鼠标穿透开启后 WebView 无法再收到点击，
+/// 因而需要由 Rust 记住状态，并在下次显示时主动恢复交互。
+struct LyricsWindowState {
+    locked: Mutex<bool>,
+    mouse_passthrough: Mutex<bool>,
 }
 
 // ═══════════════ 下载路径 ═══════════════
@@ -244,9 +252,10 @@ fn create_lyrics_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
+    .min_inner_size(460.0, 150.0)
     .minimizable(false)
     .maximizable(false)
-    .focusable(false)   // WS_EX_NOACTIVATE：永不抢焦点
+    .focusable(true)
     .visible(false)
     .focused(false)
     .build()?;
@@ -265,17 +274,61 @@ fn create_lyrics_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         });
     }
 
-    // 创建时立即设置穿透，隐藏状态下设置比显示后更稳定
-    let _ = win.set_ignore_cursor_events(true);
-    eprintln!("[lyrics] 歌词窗口预创建完成");
+    eprintln!("[lyrics] 歌词窗口预创建完成（支持悬停控制与手动调整大小）");
     Ok(())
 }
 
-/// 强制设置歌词窗口穿透（show 前后各调用一次，防止时序覆盖）。
-fn force_lyrics_passthrough(win: &tauri::WebviewWindow) {
-    for _ in 0..3 {
-        let _ = win.set_ignore_cursor_events(true);
+fn set_lyrics_mouse_passthrough(app: &tauri::AppHandle, passthrough: bool) -> Result<(), String> {
+    let win = app
+        .get_webview_window(LYRICS_LABEL)
+        .ok_or_else(|| "歌词窗口未初始化".to_string())?;
+    win.set_ignore_cursor_events(passthrough)
+        .map_err(|e| e.to_string())?;
+    if let Some(state) = app.try_state::<LyricsWindowState>() {
+        *state.mouse_passthrough.lock().unwrap() = passthrough;
     }
+    let _ = app.emit("lyrics:mouse-passthrough", passthrough);
+    Ok(())
+}
+
+/// 锁定时歌词窗会穿透鼠标。这里轮询系统鼠标位置；鼠标进入歌词范围后临时恢复
+/// 窗口输入，让前端能收到 hover 并显示工具条。鼠标离开后前端会再次请求穿透。
+fn watch_lyrics_hover(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(70));
+
+            let state = app.state::<LyricsWindowState>();
+            if !*state.locked.lock().unwrap() {
+                break;
+            }
+            drop(state);
+
+            let Some(win) = app.get_webview_window(LYRICS_LABEL) else {
+                break;
+            };
+            if !win.is_visible().unwrap_or(false) {
+                break;
+            }
+
+            let (Ok(cursor), Ok(position), Ok(size)) = (
+                app.cursor_position(),
+                win.outer_position(),
+                win.outer_size(),
+            ) else {
+                continue;
+            };
+
+            let inside = cursor.x >= position.x as f64
+                && cursor.x <= position.x as f64 + size.width as f64
+                && cursor.y >= position.y as f64
+                && cursor.y <= position.y as f64 + size.height as f64;
+            if inside {
+                let _ = set_lyrics_mouse_passthrough(&app, false);
+                break;
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -285,13 +338,20 @@ fn open_lyrics_window(app: tauri::AppHandle) -> Result<(), String> {
         .get_webview_window(LYRICS_LABEL)
         .ok_or_else(|| "[lyrics] 歌词窗口未初始化，请重启应用".to_string())?;
 
-    // show 前先确保穿透
-    force_lyrics_passthrough(&win);
+    let locked = app
+        .try_state::<LyricsWindowState>()
+        .map(|state| *state.locked.lock().unwrap())
+        .unwrap_or(true);
+    win.set_always_on_top(true).map_err(|e| e.to_string())?;
+    win.set_resizable(!locked).map_err(|e| e.to_string())?;
+    set_lyrics_mouse_passthrough(&app, locked)?;
     win.show().map_err(|e| e.to_string())?;
-    // show 后再加固一次，防止 WS_EX_TRANSPARENT 被 WM_SHOWWINDOW 消息覆盖
-    force_lyrics_passthrough(&win);
+    if locked {
+        watch_lyrics_hover(app.clone());
+    }
 
     let _ = app.emit("panel:request-state", ());
+    let _ = app.emit("lyrics:visible-state", true);
     notify_viewers(&app);
     eprintln!("[lyrics] 歌词窗口已显示");
     Ok(())
@@ -303,6 +363,7 @@ fn close_lyrics_window(app: tauri::AppHandle) -> Result<(), String> {
         // hide 而非 close：保留 webview，下次直接 show
         win.hide().map_err(|e| e.to_string())?;
     }
+    let _ = app.emit("lyrics:visible-state", false);
     notify_viewers(&app);
     eprintln!("[lyrics] 歌词窗口已隐藏");
     Ok(())
@@ -313,6 +374,92 @@ fn is_lyrics_window_open(app: tauri::AppHandle) -> bool {
     app.get_webview_window(LYRICS_LABEL)
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false)
+}
+
+/// Ctrl+D 必须在主窗口隐藏后继续生效，因此由原生快捷键回调直接切换歌词窗，
+/// 不再依赖主窗口 WebView 的生命周期。
+fn toggle_lyrics_window_from_shortcut(app: &tauri::AppHandle) {
+    let result = if is_lyrics_window_open(app.clone()) {
+        close_lyrics_window(app.clone())
+    } else {
+        open_lyrics_window(app.clone())
+    };
+
+    if let Err(error) = result {
+        eprintln!("[shortcuts] 切换桌面歌词失败: {error}");
+    }
+}
+
+/// 副窗口的播放命令统一先发给 Rust，再由 Rust 广播给主窗口。
+/// 这避免了 WebView 间直接 emit 在某些 Windows WebView2 环境中丢失的问题。
+#[tauri::command]
+fn lyrics_player_command(app: tauri::AppHandle, command: serde_json::Value) -> Result<(), String> {
+    let command_type = command
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "缺少歌词窗口命令类型".to_string())?;
+
+    if !matches!(command_type, "toggle-play" | "next" | "prev") {
+        return Err(format!("不支持的歌词窗口命令: {command_type}"));
+    }
+
+    app.emit("panel:cmd", command).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_lyrics_window_locked(app: tauri::AppHandle, locked: bool) -> Result<bool, String> {
+    let win = app
+        .get_webview_window(LYRICS_LABEL)
+        .ok_or_else(|| "歌词窗口未初始化".to_string())?;
+    // 歌词窗无论是否锁定都必须保持置顶；锁定只控制交互、移动和缩放。
+    win.set_always_on_top(true).map_err(|e| e.to_string())?;
+    win.set_resizable(!locked).map_err(|e| e.to_string())?;
+    if let Some(state) = app.try_state::<LyricsWindowState>() {
+        *state.locked.lock().unwrap() = locked;
+    }
+    set_lyrics_mouse_passthrough(&app, locked)?;
+    let _ = app.emit("lyrics:lock-state", locked);
+    if locked {
+        watch_lyrics_hover(app);
+    }
+    Ok(locked)
+}
+
+#[tauri::command]
+fn is_lyrics_window_locked(state: State<LyricsWindowState>) -> bool {
+    *state.locked.lock().unwrap()
+}
+
+fn toggle_lyrics_window_lock_from_shortcut(app: &tauri::AppHandle) {
+    let next_locked = app
+        .try_state::<LyricsWindowState>()
+        .map(|state| !*state.locked.lock().unwrap())
+        .unwrap_or(true);
+
+    match set_lyrics_window_locked(app.clone(), next_locked) {
+        Ok(locked) => eprintln!(
+            "[shortcuts] 桌面歌词已{}",
+            if locked { "锁定" } else { "解锁" }
+        ),
+        Err(error) => eprintln!("[shortcuts] 切换桌面歌词锁定状态失败: {error}"),
+    }
+}
+
+#[tauri::command]
+fn set_lyrics_window_hovering(app: tauri::AppHandle, hovering: bool) -> Result<(), String> {
+    let locked = app
+        .try_state::<LyricsWindowState>()
+        .map(|state| *state.locked.lock().unwrap())
+        .unwrap_or(true);
+    if !locked {
+        return Ok(());
+    }
+
+    set_lyrics_mouse_passthrough(&app, !hovering)?;
+    if !hovering {
+        watch_lyrics_hover(app);
+    }
+    Ok(())
 }
 
 // ═══════════════ 回退：原生托盘菜单 ═══════════════
@@ -349,8 +496,39 @@ pub fn run() {
             open_lyrics_window,
             close_lyrics_window,
             is_lyrics_window_open,
+            lyrics_player_command,
+            set_lyrics_window_locked,
+            is_lyrics_window_locked,
+            set_lyrics_window_hovering,
         ])
         .setup(|app| {
+            app.manage(LyricsWindowState {
+                locked: Mutex::new(true),
+                mouse_passthrough: Mutex::new(false),
+            });
+
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(|app, shortcut, event| {
+                        if event.state != ShortcutState::Pressed {
+                            return;
+                        }
+
+                        if shortcut.matches(Modifiers::CONTROL, Code::KeyD) {
+                            toggle_lyrics_window_from_shortcut(app);
+                        } else if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyL) {
+                            toggle_lyrics_window_lock_from_shortcut(app);
+                        }
+                    })
+                    .build(),
+            )?;
+
+            for shortcut in ["CTRL+D", "CTRL+ALT+L"] {
+                if let Err(error) = app.global_shortcut().register(shortcut) {
+                    eprintln!("[shortcuts] 注册 {shortcut} 失败: {error}");
+                }
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
