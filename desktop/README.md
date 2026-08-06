@@ -15,7 +15,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-1.3.0-e60026" />
+  <img src="https://img.shields.io/badge/version-3.2.0-e60026" />
   <img src="https://img.shields.io/github/stars/AARONWEI97/RanNuan-Music-Player-Desktop?style=social" />
 </p>
 

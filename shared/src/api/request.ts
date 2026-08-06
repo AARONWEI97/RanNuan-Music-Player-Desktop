@@ -1,16 +1,25 @@
-import axios, { type AxiosResponse, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type AxiosError,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import { getStorageAdapter } from '../storageAdapter';
 
 declare const __DEV__: boolean | undefined;
 
 const DEFAULT_API_BASE_URL = 'http://139.9.223.233:3000';
 
-interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
+interface ApiRequestOptions {
   retryCount?: number;
   noRetry?: boolean;
   silent?: boolean;
   skipAuthCookie?: boolean;
+  preserveAuthCookie?: boolean;
 }
+
+export type ApiRequestConfig<D = unknown> = AxiosRequestConfig<D> & ApiRequestOptions;
+type CustomAxiosRequestConfig<D = unknown> = InternalAxiosRequestConfig<D> & ApiRequestOptions;
 
 let apiBaseUrl = DEFAULT_API_BASE_URL;
 
@@ -30,6 +39,12 @@ const MAX_RETRIES = 1;
 const RETRY_DELAY = 500;
 export const TOKEN_KEY = 'auth_token';
 
+function withPcCookie(cookie: string): string {
+  const trimmed = cookie.trim();
+  const normalized = trimmed.endsWith(';') ? trimmed : `${trimmed};`;
+  return /(?:^|;\s*)os=/i.test(normalized) ? normalized : `${normalized} os=pc;`;
+}
+
 request.interceptors.request.use(
   async (config: CustomAxiosRequestConfig) => {
     config.baseURL = apiBaseUrl || DEFAULT_API_BASE_URL;
@@ -48,7 +63,7 @@ request.interceptors.request.use(
       const adapter = getStorageAdapter();
       const token = await adapter.getItem(TOKEN_KEY);
       if (token && !token.startsWith('uid:') && !config.skipAuthCookie) {
-        const cookieWithOs = `${token} os=pc;`;
+        const cookieWithOs = withPcCookie(token);
         if (config.method !== 'post') {
           config.params.cookie = config.params.cookie !== undefined ? config.params.cookie : cookieWithOs;
         } else if (config.method === 'post') {
@@ -57,8 +72,11 @@ request.interceptors.request.use(
               config.data.append('cookie', cookieWithOs);
             }
           } else {
+            const requestData = config.data && typeof config.data === 'object'
+              ? config.data
+              : {};
             config.data = {
-              ...config.data,
+              ...requestData,
               cookie: cookieWithOs,
             };
           }
@@ -105,7 +123,11 @@ request.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if ((error.response?.status === 401 || error.response?.status === 403) && config.params?.noLogin !== true) {
+    if (
+      (error.response?.status === 401 || error.response?.status === 403) &&
+      config.params?.noLogin !== true &&
+      !config.preserveAuthCookie
+    ) {
       try {
         const adapter = getStorageAdapter();
         await adapter.removeItem(TOKEN_KEY);

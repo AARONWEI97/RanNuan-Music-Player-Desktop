@@ -23,6 +23,7 @@ export default function LoginPage() {
   // QR state
   const [qrImg, setQrImg] = useState('')
   const qrKeyRef = useRef('')
+  const qrCheckingRef = useRef(false)
   const [qrStatus, setQrStatus] = useState<'waiting' | 'scanned' | 'expired' | 'loading'>('loading')
   const qrTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -65,13 +66,22 @@ export default function LoginPage() {
       if (qrTimer.current) clearInterval(qrTimer.current)
       const startTime = Date.now()
       qrTimer.current = setInterval(async () => {
+        if (qrCheckingRef.current) return
         if (Date.now() - startTime > 300000) {
           setQrStatus('expired')
           if (qrTimer.current) clearInterval(qrTimer.current)
           return
         }
+        qrCheckingRef.current = true
         try {
-          const checkRes = await checkQr(unikey)
+          let checkRes
+          try {
+            checkRes = await checkQr(unikey)
+          } catch (error: unknown) {
+            const status = (error as { response?: { status?: number; data?: { code?: number } } })?.response
+            if (status?.status !== 502 && status?.data?.code !== 502) throw error
+            checkRes = await checkQr(unikey, true)
+          }
           const code = checkRes?.data?.code
           if (code === 800) {
             setQrStatus('expired')
@@ -85,22 +95,16 @@ export default function LoginPage() {
             // 803 状态码下会返回 cookies
             const cookie = checkRes?.data?.cookie
             if (cookie) {
-              await login(cookie)
+              await login(cookie, 'qr')
               navigate(-1)
             } else {
-              // noCookie 模式下可能没有 cookie 字段，尝试从 response header 获取
-              const headerCookie = checkRes?.headers?.['set-cookie']
-              if (headerCookie) {
-                const cookieStr = Array.isArray(headerCookie) ? headerCookie.join('; ') : headerCookie
-                await login(cookieStr)
-                navigate(-1)
-              } else {
-                setError('登录成功但未获取到凭证，请重试')
-              }
+              setError('登录成功但未获取到凭证，请刷新二维码后重试')
             }
           }
         } catch {
           // QR check polling error - ignore and retry
+        } finally {
+          qrCheckingRef.current = false
         }
       }, 3000)
     } catch {
@@ -145,14 +149,14 @@ export default function LoginPage() {
       // API 文档: v3.30.0 后登录接口返回内容新增 cookie 字段
       const cookie = res?.data?.cookie
       if (cookie) {
-        await login(cookie)
+        await login(cookie, useCaptcha ? 'phone-captcha' : 'phone-password')
         navigate(-1)
       } else if (res?.data?.account?.id) {
         // 登录成功但 cookie 字段为空，尝试用 token 或重新获取
         const headerCookie = res?.headers?.['set-cookie']
         if (headerCookie) {
           const cookieStr = Array.isArray(headerCookie) ? headerCookie.join('; ') : headerCookie
-          await login(cookieStr)
+          await login(cookieStr, useCaptcha ? 'phone-captcha' : 'phone-password')
         } else {
           throw new Error('登录成功但未获取到凭证，请改用扫码或 Cookie 登录')
         }
@@ -171,11 +175,15 @@ export default function LoginPage() {
   const handleSendCaptcha = async () => {
     if (!phone.trim()) return setError('请输入手机号')
     try {
-      await sendCaptcha(phone)
+      const res = await sendCaptcha(phone)
+      if (res?.data?.code !== 200) {
+        throw new Error(res?.data?.message || res?.data?.msg || '发送验证码失败')
+      }
       setCaptchaSent(true)
       setCountdown(60)
-    } catch {
-      setError('发送验证码失败')
+    } catch (e: unknown) {
+      const responseData = (e as { response?: { data?: { message?: string; msg?: string } } })?.response?.data
+      setError(responseData?.message || responseData?.msg || (e instanceof Error ? e.message : '发送验证码失败'))
     }
   }
 
@@ -189,13 +197,13 @@ export default function LoginPage() {
       const res = await loginByEmail(email, emailPassword)
       const cookie = res?.data?.cookie
       if (cookie) {
-        await login(cookie)
+        await login(cookie, 'email')
         navigate(-1)
       } else if (res?.data?.account?.id) {
         const headerCookie = res?.headers?.['set-cookie']
         if (headerCookie) {
           const cookieStr = Array.isArray(headerCookie) ? headerCookie.join('; ') : headerCookie
-          await login(cookieStr)
+          await login(cookieStr, 'email')
         } else {
           throw new Error('登录成功但未获取到凭证，请改用扫码或 Cookie 登录')
         }
@@ -217,7 +225,7 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      await login(cookieStr.trim())
+      await login(cookieStr.trim(), 'cookie')
       navigate(-1)
     } catch {
       setError('Cookie无效或已过期，请重新获取')
@@ -234,7 +242,7 @@ export default function LoginPage() {
       const res = await registerAnonymous()
       const cookie = res?.data?.cookie
       if (cookie) {
-        await login(cookie)
+        await login(cookie, 'guest')
         navigate(-1)
       } else {
         setError('游客登录失败')
