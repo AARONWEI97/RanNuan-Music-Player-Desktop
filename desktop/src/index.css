@@ -170,6 +170,9 @@ html.transparent-window,
 body.transparent-window,
 body.transparent-window #root {
   background: transparent !important;
+  border-radius: 22px;
+  overflow: hidden;
+  clip-path: inset(0 round 22px);
 }
 
 /* 马卡龙流体 blob 漂移 — 与 SplashScreen 同源，提取为全局供面板复用 */

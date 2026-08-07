@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   getArtistDetail,
@@ -316,6 +316,7 @@ const TABS: { key: ArtistTabType; label: string; icon: React.ElementType }[] = [
 export default function ArtistPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
 
   // ★ 只订阅 action，不订阅 state — 播放状态变化不会触发重渲染
@@ -335,7 +336,17 @@ export default function ArtistPage() {
   const [followCount, setFollowCount] = useState(0)
   const [followLoading, setFollowLoading] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<ArtistTabType>('hot')
+  const queryTab = new URLSearchParams(location.search).get('tab')
+  const initialTab: ArtistTabType = queryTab === 'all' || queryTab === 'album' || queryTab === 'mv'
+    ? queryTab
+    : 'hot'
+  const [activeTab, setActiveTab] = useState<ArtistTabType>(initialTab)
+
+  // 专辑详情页返回时携带当前 Tab，避免动态路由重新挂载后回到“热门”。
+  const navigateFromArtist = useCallback((path: string) => {
+    const returnTo = `${location.pathname}?tab=${activeTab}`
+    navigate(path, { state: { returnTo } })
+  }, [activeTab, location.pathname, navigate])
 
   // Hot songs — 加载一次，不参与分页
   const [hotSongs, setHotSongs] = useState<SongResult[]>([])
@@ -563,16 +574,16 @@ export default function ArtistPage() {
         <HotSongsTab artistId={id} hotSongs={hotSongs}
           handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll}
           handleAddToNext={handleAddToNext} handleToggleFav={handleToggleFav}
-          onNavigate={(path) => navigate(path)} />
+          onNavigate={navigateFromArtist} />
       </TabCache>
       <TabCache active={activeTab === 'all'}>
         <AllSongsTab artistId={artistId}
           handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll}
           handleAddToNext={handleAddToNext} handleToggleFav={handleToggleFav}
-          onNavigate={(path) => navigate(path)} />
+          onNavigate={navigateFromArtist} />
       </TabCache>
       <TabCache active={activeTab === 'album'}>
-        <AlbumTab artistId={artistId} onNavigate={(path) => navigate(path)} />
+        <AlbumTab artistId={artistId} onNavigate={navigateFromArtist} />
       </TabCache>
       <TabCache active={activeTab === 'mv'}>
         <MvTab artistId={artistId} />

@@ -177,12 +177,14 @@ export async function restoreSession(): Promise<boolean> {
     usePlaylistStore.getState().setPlayListIndex(0)
   }
 
-  // 设置 song 的基本信息
-  currentSong.playMusicUrl = session.playMusicUrl
+  // 远程播放 URL 通常有时效，不能把上次会话里的旧地址当成永久缓存。
+  // 让 playSong 在启动时重新解析，避免 PlayBar 只调用 audio.play() 时拿到失效地址。
+  currentSong.playMusicUrl = undefined
+  currentSong['expiredAt'] = undefined
+  usePlayerStore.getState().setPlayMusicUrl('')
 
   // ★ 调用 playSong 完成 URL 解析 + 设置 audio.src，但不自动播放
   const { playSong } = await import('./audioService')
-  currentSong.playMusicUrl = session.playMusicUrl
   await playSong(currentSong, 0, false) // autoPlay=false → 只设置 src，不播放
 
   console.log('[Session] ✅ 会话恢复完成（已暂停，src 已就绪，点击播放即可）')

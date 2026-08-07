@@ -1,5 +1,5 @@
 import { usePlayerStore, usePlaylistStore, useSettingsStore, parseMusicUrl, parseLyric, type SongResult, getMusicLrc, musicParser, AVAILABLE_SOURCES } from '@shared';
-import { addToHistory } from '@/store/historyStore';
+import { recordSuccessfulPlay } from '@/store/historyStore';
 import { showToast } from '@/utils/toast';
 import { saveSession } from './sessionManager';
 
@@ -302,7 +302,6 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
     return;
   }
 
-  addToHistory(song);
   const player = usePlayerStore.getState();
   const musicQuality = useSettingsStore.getState().musicQuality || 'exhigh';
 
@@ -343,6 +342,7 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
       if (autoPlay) {
         await a.play();
         player.setIsPlay(true);
+        recordSuccessfulPlay(song);
       } else {
         player.setIsPlay(false);
       }
@@ -402,6 +402,7 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
       }
 
       player.setIsPlay(autoPlay);
+      if (autoPlay) recordSuccessfulPlay(song);
       updateMediaSessionMetadata(song);
       if (autoPlay) showToast('正在播放', song.name);
       usePlaylistStore.getState().resetFailCount(); // P0-2: 播放成功重置失败计数
@@ -536,20 +537,38 @@ function preloadNextSong() {
 
 export function togglePlay() {
   if (!acquireOperationLock()) return; // P0-5
-  try {
-    const a = getAudio();
-    if (a.paused) {
-      a.play();
-      // 恢复播放时更新 tooltip
-      const song = usePlayerStore.getState().playMusic;
-      if (song) notifyTray(song);
-    } else {
-      a.pause();
-      notifyTray(null);
-    }
-  } finally {
+  const a = getAudio();
+  const player = usePlayerStore.getState();
+  const song = player.playMusic || usePlaylistStore.getState().getCurrentSong();
+
+  if (!a.paused) {
+    a.pause();
+    notifyTray(null);
     releaseOperationLock();
+    return;
   }
+
+  // 启动恢复、浏览器重建 Audio 实例或上次 URL 失效时，audio.src 可能为空。
+  // 直接调用 audio.play() 不会触发 URL 解析，必须复用完整的 playSong 流程。
+  if (!song || !a.currentSrc) {
+    releaseOperationLock();
+    if (song) void playSong(song);
+    return;
+  }
+
+  const playPromise = a.play();
+  // 远程地址过期时，先清掉旧缓存再重新解析当前歌曲。
+  playPromise?.catch((error: unknown) => {
+    console.warn('[Audio] Resumed playback failed, resolving a fresh URL:', error);
+    if (usePlayerStore.getState().playMusic?.id !== song.id) return;
+    song.playMusicUrl = undefined;
+    song['expiredAt'] = undefined;
+    usePlayerStore.getState().setPlayMusicUrl('');
+    void playSong(song);
+  });
+  // 恢复播放是异步的，不能持有同步操作锁等待 Promise。
+  releaseOperationLock();
+  notifyTray(song);
 }
 
 export function seekTo(ms: number) {

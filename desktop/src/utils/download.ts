@@ -1,4 +1,6 @@
 import { showToast } from './toast'
+import { getMusicUrl } from '@shared/api/music'
+import type { SongResult } from '@shared'
 
 /* ─── 下载任务状态 ─── */
 export type DownloadState = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
@@ -108,17 +110,18 @@ async function doDownload(task: DownloadTask) {
     console.log(`[Download] Completed: "${task.songName}" (${(loaded / 1024 / 1024).toFixed(1)} MB)`)
     showToast('下载完成', task.songName)
 
-  } catch (e: any) {
-    if (e.name === 'AbortError') {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (error instanceof Error && error.name === 'AbortError') {
       task.state = 'cancelled'
       onStateChange?.(task.taskId, 'cancelled')
       console.log(`[Download] Cancelled: "${task.songName}"`)
     } else {
       task.state = 'failed'
-      task.error = e.message
-      onStateChange?.(task.taskId, 'failed', e.message)
-      console.error(`[Download] Failed: "${task.songName}"`, e)
-      showToast('下载失败', `${task.songName}: ${e.message}`)
+      task.error = message
+      onStateChange?.(task.taskId, 'failed', message)
+      console.error(`[Download] Failed: "${task.songName}"`, error)
+      showToast('下载失败', `${task.songName}: ${message}`)
     }
   } finally {
     controllers.delete(task.taskId)
@@ -172,6 +175,37 @@ export function addDownload(
 
 // ★ Bug 1 修复：导出 downloadSong 别名供 SongRow 使用
 export const downloadSong = addDownload
+
+/**
+ * Resolve a fresh media URL before downloading. Playback URLs may point to a
+ * parser/proxy that can be played by the audio element but rejects fetch.
+ * Song menus and detail pages must share this entry point.
+ */
+export async function queueSongDownload(song: SongResult): Promise<boolean> {
+  try {
+    showToast('正在获取下载链接...', song.name)
+    const response = await getMusicUrl(Number(song.id), false)
+    const url = response?.data?.data?.[0]?.url
+
+    if (!url) {
+      showToast('获取下载链接失败', '该歌曲可能无法下载')
+      return false
+    }
+
+    const artist = song.ar?.map((item) => item.name).join(' / ') || undefined
+    const album = song.al || song.album
+    addDownload(Number(song.id), song.name, url, artist, {
+      picUrl: song.picUrl || album?.picUrl,
+      album: album?.name,
+    })
+    showToast('已加入下载队列', song.name)
+    return true
+  } catch (error: unknown) {
+    console.error('[Download] Failed to fetch URL:', error)
+    showToast('获取下载链接失败', error instanceof Error ? error.message : '网络错误')
+    return false
+  }
+}
 
 export function batchDownload(songs: Array<{ songId: number; songName: string; url: string; artist?: string; picUrl?: string; album?: string }>) {
   const ids: string[] = []

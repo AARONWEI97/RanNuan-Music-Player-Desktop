@@ -53,7 +53,7 @@ const SongRow = memo(function SongRow({
 
   // ★ 同步外部 prop 变化（父组件传的 isFavorite 变了）
   useEffect(() => {
-    if (isFavoriteProp !== undefined && isFavoriteProp !== fav) {
+    if (isFavoriteProp !== undefined) {
       setFav(isFavoriteProp)
     }
   }, [isFavoriteProp])
@@ -129,32 +129,8 @@ const SongRow = memo(function SongRow({
         label: '下载',
         icon: <Download className="w-4 h-4" />,
         onClick: async () => {
-          const artistName = song.ar?.map((a) => a.name).join(' / ') || undefined
-          const meta = { picUrl: song.al?.picUrl, album: song.al?.name }
-          
-          // 优先使用已有的 URL（避免重复请求）
-          if (song.playMusicUrl) {
-            import('@/utils/download').then(m => m.downloadSong(song.id as number, song.name, song.playMusicUrl!, artistName, meta))
-            return
-          }
-
-          // 调用 API 获取下载 URL，不影响播放器
-          try {
-            showToast('正在获取下载链接...', song.name)
-            const { getMusicUrl } = await import('@shared/api/music')
-            const res = await getMusicUrl(song.id as number, false)
-            const url = res?.data?.data?.[0]?.url
-            
-            if (!url) {
-              showToast('获取下载链接失败', '该歌曲可能无法下载')
-              return
-            }
-
-            import('@/utils/download').then(m => m.downloadSong(song.id as number, song.name, url, artistName, meta))
-          } catch (error: any) {
-            console.error('[Download] Failed to fetch URL:', error)
-            showToast('获取下载链接失败', error.message || '网络错误')
-          }
+          const { queueSongDownload } = await import('@/utils/download')
+          await queueSongDownload(song)
         },
       },
       { label: '', divider: true, onClick: () => {} },

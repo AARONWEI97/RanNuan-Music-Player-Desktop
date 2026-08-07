@@ -9,14 +9,38 @@ import { thumbUrl } from '@/utils/image'
 interface LocalSong {
   id: string
   name: string
+  fileName?: string
   size: number
   artist?: string
   picUrl?: string
   album?: string
+  titleSource?: 'tag' | 'filename' | 'match'
   /** Internal: store blob URL (not persisted — rebuilt on load) */
   _blobUrl?: string
+  /** Internal: embedded cover blob URL (not persisted) */
+  _coverUrl?: string
   /** Internal: true if file data is loading/missing from IndexedDB */
   _missing?: boolean
+}
+
+interface LocalAudioMetadata {
+  name?: string
+  artist?: string
+  album?: string
+  coverUrl?: string
+}
+
+interface SearchSong {
+  name?: string
+  ar?: Array<{ name?: string }>
+  al?: { name?: string; picUrl?: string }
+}
+
+interface SearchResponse {
+  data?: {
+    result?: { songs?: SearchSong[] }
+    data?: { songs?: SearchSong[] }
+  }
 }
 
 const META_KEY = 'rannuan-local-meta'
@@ -29,8 +53,9 @@ function loadMeta(): LocalSong[] {
 }
 function saveMeta(songs: LocalSong[]) {
   // strip transient fields before persisting
-  const clean = songs.map(({ _blobUrl, _missing, ...rest }) => {
+  const clean = songs.map(({ _blobUrl, _coverUrl, _missing, ...rest }) => {
     void _blobUrl
+    void _coverUrl
     void _missing
     return rest
   })
@@ -48,21 +73,64 @@ function cleanFilename(raw: string): string {
   return s || raw.replace(/\.[^/.]+$/, '')
 }
 
-function parseFile(raw: string): { name: string; artist?: string } {
-  const cleaned = cleanFilename(raw)
-  for (const sep of [' - ', ' – ', ' — ']) {
-    const i = cleaned.indexOf(sep)
-    if (i > 0) {
-      const artist = cleaned.slice(0, i).trim()
-      const name = cleaned.slice(i + sep.length).trim()
-      if (artist.length <= 40 && name.length >= 1) return { name, artist }
-    }
+function parseFile(raw: string): { name: string } {
+  // “歌手 - 歌名”和“歌名 - 歌手”无法仅凭文件名可靠区分。
+  // 保留完整名称，稍后由音频标签或在线匹配提供结构化字段。
+  return { name: cleanFilename(raw) }
+}
+
+function normalizeTagText(value?: string): string | undefined {
+  const text = value?.trim()
+  if (!text || /[\u4e00-\u9fff]/.test(text) || !/[\u0080-\u00ff]/.test(text)) return text || undefined
+  if ([...text].some((character) => character.charCodeAt(0) > 0xff)) return text
+
+  try {
+    const bytes = Uint8Array.from([...text], (character) => character.charCodeAt(0))
+    const decoded = new TextDecoder('gbk').decode(bytes).trim()
+    return /[\u4e00-\u9fff]/.test(decoded) ? decoded : text
+  } catch {
+    return text
   }
-  return { name: cleaned }
+}
+
+async function readAudioMetadata(blob: Blob): Promise<LocalAudioMetadata> {
+  try {
+    const { parseBlob, selectCover } = await import('music-metadata')
+    const metadata = await parseBlob(blob, { duration: false })
+    const cover = selectCover(metadata.common.picture)
+    let coverUrl: string | undefined
+
+    if (cover?.data?.byteLength) {
+      const bytes = new Uint8Array(cover.data.byteLength)
+      bytes.set(cover.data)
+      coverUrl = URL.createObjectURL(new Blob([bytes.buffer], { type: cover.format || 'image/jpeg' }))
+    }
+
+    return {
+      name: normalizeTagText(metadata.common.title),
+      artist: normalizeTagText(metadata.common.artist || metadata.common.albumartist),
+      album: normalizeTagText(metadata.common.album),
+      coverUrl,
+    }
+  } catch (error) {
+    console.warn('[LocalMusic] Failed to parse audio metadata:', error)
+    return {}
+  }
+}
+
+function mergeSearchInfo(song: LocalSong, info: Awaited<ReturnType<typeof searchMatch>>): LocalSong {
+  if (!info) return song
+  const useMatchedTitle = song.titleSource !== 'tag' && info.name
+  return {
+    ...song,
+    ...info,
+    name: useMatchedTitle ? info.name! : song.name,
+    titleSource: useMatchedTitle ? 'match' : song.titleSource,
+  }
 }
 
 // ── 搜索封面 ──
-async function searchMatch(name: string, artist?: string): Promise<{ picUrl?: string; artist?: string; album?: string } | null> {
+async function searchMatch(name: string, artist?: string): Promise<{ name?: string; picUrl?: string; artist?: string; album?: string } | null> {
   const queries: string[] = []
   if (artist) { queries.push(`${name} ${artist}`, `${artist} ${name}`, name) }
   else {
@@ -72,14 +140,19 @@ async function searchMatch(name: string, artist?: string): Promise<{ picUrl?: st
   }
   for (const q of queries) {
     try {
-      const res: any = await getSearch({ keywords: q, type: 1, limit: 5 })
+      const res = await getSearch({ keywords: q, type: 1, limit: 5 }) as SearchResponse
       const songs = res?.data?.result?.songs || res?.data?.data?.songs || []
-      const exact = songs.find((s: any) =>
+      const exact = songs.find((s) =>
         s.name?.replace(/\s*[（(].*[)）]\s*/g, '').toLowerCase() === name.replace(/\s*[（(].*[)）]\s*/g, '').toLowerCase()
       )
       const best = exact || songs[0]
-      if (best?.al?.picUrl) {
-        return { picUrl: best.al.picUrl, artist: best.ar?.map((a: any) => a.name).join(' / '), album: best.al?.name }
+      if (best) {
+        return {
+          name: best.name,
+          picUrl: best.al?.picUrl,
+          artist: best.ar?.map((item) => item.name).filter(Boolean).join(' / ') || undefined,
+          album: best.al?.name,
+        }
       }
     } catch { /* next */ }
   }
@@ -106,8 +179,17 @@ export default function LocalMusicPage() {
       const buf = await loadLocalFile(m.id)
       if (buf) {
         const blob = new Blob([buf])
+        const metadata = await readAudioMetadata(blob)
         const url = URL.createObjectURL(blob)
-        return { ...m, _blobUrl: url }
+        return {
+          ...m,
+          name: metadata.name || m.name || cleanFilename(m.fileName || '未知歌曲'),
+          artist: metadata.artist || m.artist,
+          album: metadata.album || m.album,
+          titleSource: metadata.name ? 'tag' as const : m.titleSource,
+          _blobUrl: url,
+          _coverUrl: metadata.coverUrl,
+        }
       }
       return { ...m, _missing: true }
     })).then(results => {
@@ -128,7 +210,7 @@ export default function LocalMusicPage() {
     setMatching(p => { const n = new Set(p); n.add(id); return n })
     const info = await searchMatch(name, artist)
     setSongs(prev => {
-      const next = prev.map(s => s.id === id ? { ...s, ...info } : s)
+      const next = prev.map(s => s.id === id ? mergeSearchInfo(s, info) : s)
       persistMeta(next)
       return next
     })
@@ -149,7 +231,7 @@ export default function LocalMusicPage() {
         const info = await searchMatch(s.name, s.artist)
         if (info) {
           setSongs(prev => {
-            const next = prev.map(x => x.id === s.id ? { ...x, ...info } : x)
+            const next = prev.map(x => x.id === s.id ? mergeSearchInfo(x, info) : x)
             persistMeta(next)
             return next
           })
@@ -166,29 +248,30 @@ export default function LocalMusicPage() {
     if (!files) return
 
     const ts = Date.now()
-    const newSongs: LocalSong[] = []
-    const storePromises: Promise<void>[] = []
-
-    Array.from(files).forEach((file, i) => {
-      const { name, artist } = parseFile(file.name)
+    const newSongs = await Promise.all(Array.from(files).map(async (file, i): Promise<LocalSong> => {
+      const fallback = parseFile(file.name)
       const id = `local-${ts}-${i}-${Math.random().toString(36).slice(2, 6)}`
       const blobUrl = URL.createObjectURL(file)
+      const [metadata, buffer] = await Promise.all([
+        readAudioMetadata(file),
+        file.arrayBuffer(),
+      ])
 
       // store file content to IndexedDB
-      storePromises.push(
-        file.arrayBuffer().then(buf => storeLocalFile(id, buf))
-      )
+      await storeLocalFile(id, buffer)
 
-      newSongs.push({
-        id, name,
+      return {
+        id,
+        name: metadata.name || fallback.name,
+        fileName: file.name,
         size: file.size,
-        artist,
+        artist: metadata.artist,
+        album: metadata.album,
+        titleSource: metadata.name ? 'tag' : 'filename',
         _blobUrl: blobUrl,
-      })
-    })
-
-    // wait for IndexedDB writes to complete
-    await Promise.allSettled(storePromises)
+        _coverUrl: metadata.coverUrl,
+      }
+    }))
 
     const merged = [...songs, ...newSongs]
     setSongs(merged)
@@ -203,7 +286,7 @@ export default function LocalMusicPage() {
       const sid = newSongs[i].id
       if (r.status === 'fulfilled' && r.value) {
         setSongs(prev => {
-          const n = prev.map(s => s.id === sid ? { ...s, ...r.value } : s)
+          const n = prev.map(s => s.id === sid ? mergeSearchInfo(s, r.value) : s)
           persistMeta(n)
           return n
         })
@@ -216,6 +299,7 @@ export default function LocalMusicPage() {
   const remove = useCallback((id: string) => {
     const song = songs.find(s => s.id === id)
     if (song?._blobUrl) URL.revokeObjectURL(song._blobUrl)
+    if (song?._coverUrl) URL.revokeObjectURL(song._coverUrl)
     removeLocalFile(id).catch(() => {})
     const next = songs.filter(s => s.id !== id)
     setSongs(next)
@@ -310,9 +394,9 @@ export default function LocalMusicPage() {
                   <div className="w-10 h-10 rounded-lg bg-red-50 dark:bg-red-900/10 flex items-center justify-center flex-shrink-0">
                     <AlertTriangle className="w-5 h-5 text-red-300 dark:text-red-600/50" />
                   </div>
-                ) : song.picUrl ? (
+                ) : (song._coverUrl || song.picUrl) ? (
                   <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 relative bg-gray-100 dark:bg-white/[0.04] ring-1 ring-black/[0.04] dark:ring-white/[0.04]">
-                    <img src={thumbUrl(song.picUrl)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                    <img src={song._coverUrl || thumbUrl(song.picUrl || '')} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                       <Play className="w-4 h-4 text-white ml-0.5" />
                     </div>

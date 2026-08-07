@@ -24,22 +24,59 @@ function formatCount(n?: number | null) {
   return `${value}`
 }
 
-function resolveFirstListenText(info: any) {
+type ApiObject = Record<string, unknown>
+
+function asApiObject(value: unknown): ApiObject | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as ApiObject
+    : null
+}
+
+function getApiPath(value: unknown, path: readonly string[]): unknown {
+  let current: unknown = value
+  for (const key of path) {
+    const object = asApiObject(current)
+    if (!object) return undefined
+    current = object[key]
+  }
+  return current
+}
+
+function firstApiValue(value: unknown, paths: readonly (readonly string[])[]): unknown {
+  for (const path of paths) {
+    const result = getApiPath(value, path)
+    if (result !== null && result !== undefined) return result
+  }
+  return undefined
+}
+
+function firstApiString(value: unknown, paths: readonly (readonly string[])[]): string {
+  const result = firstApiValue(value, paths)
+  return typeof result === 'string' ? result : ''
+}
+
+function firstApiArray(value: unknown, paths: readonly (readonly string[])[]): unknown[] {
+  if (Array.isArray(value)) return value
+  const result = firstApiValue(value, paths)
+  return Array.isArray(result) ? result : []
+}
+
+function resolveFirstListenText(info: unknown) {
   if (!info) return ''
   if (typeof info === 'string') return info
-  const timestamp = info.firstListenTime || info.listenTime || info.time
+  const timestamp = firstApiValue(info, [['firstListenTime'], ['listenTime'], ['time']])
   if (typeof timestamp === 'number' && timestamp > 1000000000) {
     return new Date(timestamp).toLocaleDateString('zh-CN')
   }
   return pickText(info)
 }
 
-function normalizeText(value: any) {
+function normalizeText(value: unknown) {
   if (value === null || value === undefined) return ''
   return String(value).replace(/\s+/g, ' ').trim()
 }
 
-function collectTexts(input: any, result: string[] = [], depth = 0) {
+function collectTexts(input: unknown, result: string[] = [], depth = 0) {
   if (!input) return result
   if (depth > 5) return result
   if (typeof input === 'string') {
@@ -58,15 +95,16 @@ function collectTexts(input: any, result: string[] = [], depth = 0) {
     input.forEach((item) => collectTexts(item, result, depth + 1))
     return result
   }
-  if (typeof input !== 'object') return result
-  Object.entries(input).forEach(([key, value]) => {
+  const object = asApiObject(input)
+  if (!object) return result
+  Object.entries(object).forEach(([key, value]) => {
     if (/url|pic|cover|image|avatar|icon|id|time|count|code|type|status/i.test(key)) return
     collectTexts(value, result, depth + 1)
   })
   return result
 }
 
-function pickText(input: any) {
+function pickText(input: unknown) {
   if (!input) return ''
   if (typeof input === 'string') return normalizeText(input)
   if (typeof input !== 'object') return normalizeText(input)
@@ -85,7 +123,7 @@ function pickText(input: any) {
   ]
 
   for (const key of priorityKeys) {
-    const value = input?.[key]
+    const value = getApiPath(input, [key])
     if (typeof value === 'string' && normalizeText(value).length >= 2) return normalizeText(value)
     if (Array.isArray(value)) {
       const text = collectTexts(value).sort((a, b) => b.length - a.length)[0]
@@ -96,30 +134,35 @@ function pickText(input: any) {
   return collectTexts(input).sort((a, b) => b.length - a.length)[0] || ''
 }
 
-function pickUrl(input: any) {
+function pickUrl(input: unknown) {
   if (!input) return ''
   if (typeof input === 'string') return input
-  return input.url || input.coverUrl || input.imageUrl || input.picUrl || input.src || input.imgUrl || ''
+  return firstApiString(input, [['url'], ['coverUrl'], ['imageUrl'], ['picUrl'], ['src'], ['imgUrl']])
 }
 
-function pickCreatorNames(input: any) {
-  const list = Array.isArray(input) ? input : input?.creators || input?.data || input?.items || input?.songUserInfos || []
-  if (!Array.isArray(list)) return ''
+function pickCreatorNames(input: unknown) {
+  const list = firstApiArray(input, [['creators'], ['data'], ['items'], ['songUserInfos']])
   return list
     .slice(0, 4)
-    .map((item) => item?.name || item?.nickname || item?.userName || item?.artistName || item?.creatorName || item?.realName || item?.user?.nickname || '')
+    .map((item) => firstApiString(item, [
+      ['name'], ['nickname'], ['userName'], ['artistName'], ['creatorName'], ['realName'], ['user', 'nickname'],
+    ]))
     .filter(Boolean)
     .join(' / ')
 }
 
-function pickSongListText(input: any) {
-  const list = Array.isArray(input) ? input : input?.songs || input?.data || input?.items || input?.rcmdSongs || input?.songList || []
-  if (!Array.isArray(list)) return ''
+function pickSongListText(input: unknown) {
+  const list = firstApiArray(input, [['songs'], ['data'], ['items'], ['rcmdSongs'], ['songList']])
   return list
     .slice(0, 3)
     .map((item) => {
-      const song = item?.song || item
-      return song?.name || song?.songName || song?.title || song?.albumName || song?.artists?.map((a: any) => a?.name).filter(Boolean).join(' / ') || ''
+      const song = getApiPath(item, ['song']) ?? item
+      const title = firstApiString(song, [['name'], ['songName'], ['title'], ['albumName']])
+      if (title) return title
+      return firstApiArray(song, [['artists']])
+        .map((artist) => firstApiString(artist, [['name']]))
+        .filter(Boolean)
+        .join(' / ')
     })
     .filter(Boolean)
     .join(' · ')
@@ -131,33 +174,34 @@ function uniqueTexts(list: string[]) {
   return Array.from(new Set(list.map(normalizeText).filter(Boolean)))
 }
 
-function getNodeTitle(node: any) {
-  const title = node?.uiElement?.mainTitle?.title ?? node?.mainTitle?.title ?? node?.title
-  return typeof title === 'string' ? normalizeText(title) : ''
+function getNodeTitle(node: unknown) {
+  return normalizeText(firstApiString(node, [['uiElement', 'mainTitle', 'title'], ['mainTitle', 'title'], ['title']]))
 }
 
-function getTextLinkValues(node: any) {
-  const links = node?.uiElement?.textLinks ?? node?.textLinks ?? []
-  return Array.isArray(links) ? links.map((item) => item?.text).filter(Boolean) : []
+function getTextLinkValues(node: unknown) {
+  return firstApiArray(node, [['uiElement', 'textLinks'], ['textLinks']])
+    .map((item) => firstApiString(item, [['text']]))
+    .filter(Boolean)
 }
 
-function getButtonValues(node: any) {
-  const buttons = node?.uiElement?.buttons ?? node?.buttons ?? []
-  return Array.isArray(buttons) ? buttons.map((item) => item?.text).filter(Boolean) : []
+function getButtonValues(node: unknown) {
+  return firstApiArray(node, [['uiElement', 'buttons'], ['buttons']])
+    .map((item) => firstApiString(item, [['text']]))
+    .filter(Boolean)
 }
 
-function getResourceValues(resource: any) {
-  const images = resource?.uiElement?.images ?? []
+function getResourceValues(resource: unknown): string[] {
+  const images = firstApiArray(resource, [['uiElement', 'images']])
   return [
     getNodeTitle(resource),
-    ...(Array.isArray(images) ? images.map((item) => item?.title).filter(Boolean) : []),
+    ...images.map((item) => firstApiString(item, [['title']])).filter(Boolean),
     ...getTextLinkValues(resource),
     ...getButtonValues(resource),
   ].filter(Boolean)
 }
 
-function getCreativeValue(creative: any) {
-  const resources = Array.isArray(creative?.resources) ? creative.resources : []
+function getCreativeValue(creative: unknown) {
+  const resources = firstApiArray(creative, [['resources']])
   return uniqueTexts([
     ...resources.flatMap(getResourceValues),
     ...getTextLinkValues(creative),
@@ -165,13 +209,13 @@ function getCreativeValue(creative: any) {
   ]).join(' / ')
 }
 
-function getWikiCreatives(wiki: any) {
-  const blocks = Array.isArray(wiki?.blocks) ? wiki.blocks : []
-  const basic = blocks.find((block: any) => block?.code === 'SONG_PLAY_ABOUT_SONG_BASIC')
-  return Array.isArray(basic?.creatives) ? basic.creatives : []
+function getWikiCreatives(wiki: unknown) {
+  const blocks = firstApiArray(wiki, [['blocks']])
+  const basic = blocks.find((block) => getApiPath(block, ['code']) === 'SONG_PLAY_ABOUT_SONG_BASIC')
+  return firstApiArray(basic, [['creatives']])
 }
 
-function pickWikiFacts(wiki: any): InfoItem[] {
+function pickWikiFacts(wiki: unknown): InfoItem[] {
   const labels: Record<string, string> = {
     songTag: '曲风',
     songBizTag: '标签',
@@ -181,61 +225,60 @@ function pickWikiFacts(wiki: any): InfoItem[] {
     sheet: '乐谱',
   }
   return getWikiCreatives(wiki)
-    .map((creative: any) => {
-      const label = labels[creative?.creativeType]
+    .flatMap((creative) => {
+      const creativeType = firstApiString(creative, [['creativeType']])
+      const label = labels[creativeType]
       const value = getCreativeValue(creative)
-      return label && value ? { label, value } : null
+      return label && value ? [{ label, value }] : []
     })
-    .filter(Boolean) as InfoItem[]
 }
 
-function pickWikiComment(wiki: any) {
-  const comment = getWikiCreatives(wiki).find((creative: any) => creative?.creativeType === 'songComment')
-  const resources = Array.isArray(comment?.resources) ? comment.resources : []
-  const descriptions = resources.flatMap((resource: any) => {
-    const list = resource?.uiElement?.descriptions ?? []
-    return Array.isArray(list) ? list.map((item) => item?.description || item?.title).filter(Boolean) : []
+function pickWikiComment(wiki: unknown) {
+  const comment = getWikiCreatives(wiki).find((creative) => getApiPath(creative, ['creativeType']) === 'songComment')
+  const resources = firstApiArray(comment, [['resources']])
+  const descriptions = resources.flatMap((resource) => {
+    return firstApiArray(resource, [['uiElement', 'descriptions']])
+      .map((item) => firstApiString(item, [['description'], ['title']]))
+      .filter(Boolean)
   })
   return normalizeText(descriptions[0] || '')
 }
 
-function pickWikiImage(wiki: any) {
-  const blocks = Array.isArray(wiki?.blocks) ? wiki.blocks : []
+function pickWikiImage(wiki: unknown) {
+  const blocks = firstApiArray(wiki, [['blocks']])
   for (const block of blocks) {
-    const images = block?.uiElement?.images
-    if (Array.isArray(images)) {
-      const url = images.find((item: any) => item?.imageUrl)?.imageUrl
-      if (url) return url
-    }
+    const images = firstApiArray(block, [['uiElement', 'images']])
+    const url = images.map((item) => firstApiString(item, [['imageUrl']])).find(Boolean)
+    if (url) return url
   }
   return ''
 }
 
-function formatChorus(input: any) {
-  const start = input?.startTime ?? input?.start ?? input?.startMs ?? input?.chorusStartTime
-  const end = input?.endTime ?? input?.end ?? input?.endMs ?? input?.chorusEndTime
+function formatChorus(input: unknown) {
+  const start = firstApiValue(input, [['startTime'], ['start'], ['startMs'], ['chorusStartTime']])
+  const end = firstApiValue(input, [['endTime'], ['end'], ['endMs'], ['chorusEndTime']])
   if (typeof start === 'number' && start > 0) {
     return typeof end === 'number' && end > start ? `${fmtMs(start)} - ${fmtMs(end)}` : fmtMs(start)
   }
   return pickText(input)
 }
 
-function pickCount(input: any) {
+function pickCount(input: unknown) {
   if (typeof input === 'number') return input
-  const value = input?.count ?? input?.redCount ?? input?.total ?? input?.value
+  const value = firstApiValue(input, [['count'], ['redCount'], ['total'], ['value']])
   return typeof value === 'number' ? value : null
 }
 
 type DetailTab = 'lyrics' | 'comments' | 'similar'
 
 type SongMeta = {
-  wiki?: any
-  creators?: any
-  dynamicCover?: any
-  chorus?: any
-  copyrightRcmd?: any
-  redCount?: any
-  firstListen?: any
+  wiki?: unknown
+  creators?: unknown
+  dynamicCover?: unknown
+  chorus?: unknown
+  copyrightRcmd?: unknown
+  redCount?: unknown
+  firstListen?: unknown
 }
 
 /* ─── 黑胶唱片 SVG 组件 ─── */
@@ -316,6 +359,7 @@ export default function SongDetailPage() {
   const [metaLoading, setMetaLoading] = useState(false)
   const [fav, setFav] = useState(false)
   const [hoverPct, setHoverPct] = useState<number | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   const songId = playMusic?.id
   const coverImg = playMusic?.picUrl || playMusic?.al?.picUrl || playMusic?.album?.picUrl
@@ -344,16 +388,32 @@ export default function SongDetailPage() {
     setMetaLoading(true)
     getMusicLrc(Number(songId)).then(r => setLyrics(parseApiLyric(r.data)?.lrcArray || []))
     // 预取评论总数，Tab 标签立即显示数字
-    getNewComment({ id: Number(songId), type: 0, pageNo: 1, pageSize: 1, sortType: 2 }).then((r: any) => setCommentTotal(r?.data?.data?.totalCount || r?.data?.totalCount || r?.data?.total || 0))
+    getNewComment({ id: Number(songId), type: 0, pageNo: 1, pageSize: 1, sortType: 2 }).then((response) => {
+      const total = firstApiValue(response?.data, [['data', 'totalCount'], ['totalCount'], ['total']])
+      setCommentTotal(typeof total === 'number' ? total : 0)
+    })
     getSimiSong(Number(songId)).then(r => {
       // ★ 相似歌曲 API 返回字段可能是 artists/album 而非 ar/al，需要归一化
-      const raw = r?.data?.songs || []
-      setSimilarSongs(raw.map((s: any) => ({
-        ...s,
-        ar: s.ar || s.artists?.map((a: any) => ({ id: a.id, name: a.name })),
-        al: s.al || (s.album ? { id: s.album.id, name: s.album.name, picUrl: s.album.picUrl || s.album.pic_id } : undefined),
-        picUrl: s.picUrl || s.al?.picUrl || s.album?.picUrl || s.album?.pic_id || '',
-      })))
+      const raw: unknown[] = Array.isArray(r?.data?.songs) ? r.data.songs : []
+      setSimilarSongs(raw.map((value) => {
+        const song = asApiObject(value) || {}
+        const artists = firstApiArray(song, [['ar'], ['artists']]).map((artist) => ({
+          id: Number(firstApiValue(artist, [['id']])) || 0,
+          name: firstApiString(artist, [['name']]),
+        }))
+        const albumValue = firstApiValue(song, [['al'], ['album']])
+        const album = {
+          id: Number(firstApiValue(albumValue, [['id']])) || 0,
+          name: firstApiString(albumValue, [['name']]),
+          picUrl: firstApiString(albumValue, [['picUrl'], ['pic_id']]),
+        }
+        return {
+          ...song,
+          ar: artists,
+          al: album,
+          picUrl: firstApiString(song, [['picUrl'], ['al', 'picUrl'], ['album', 'picUrl'], ['album', 'pic_id']]),
+        } as unknown as SongResult
+      }))
     })
     Promise.allSettled([
       getSongWiki(Number(songId)),
@@ -404,22 +464,21 @@ export default function SongDetailPage() {
 
   // 下载当前歌曲
   const handleDownload = async () => {
-    if (!playMusic) return
-    const url = playMusic.playMusicUrl || playMusic.url
-    if (url) {
-      const { addDownload } = await import('@/utils/download')
-      addDownload(Number(playMusic.id), playMusic.name, url, playMusic.ar?.map(a => a.name).join(' / '),
-        { picUrl: playMusic.al?.picUrl, album: playMusic.al?.name })
-      showToast('已加入下载队列', playMusic.name)
-    } else {
-      showToast('无法获取下载链接', '请先播放歌曲')
+    if (!playMusic || downloading) return
+
+    setDownloading(true)
+    try {
+      const { queueSongDownload } = await import('@/utils/download')
+      await queueSongDownload(playMusic)
+    } finally {
+      setDownloading(false)
     }
   }
 
   // 播放相似歌曲（先取 URL）
   const handlePlaySimilar = async (s: SongResult) => {
     try {
-      const res: any = await getMusicUrl(s.id as number, false)
+      const res = await getMusicUrl(Number(s.id), false)
       const url = res?.data?.data?.[0]?.url
       if (url) {
         s.playMusicUrl = url
@@ -484,8 +543,13 @@ export default function SongDetailPage() {
           <button onClick={handleBack} className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-white/40 hover:text-[#e60026] dark:hover:text-white transition-colors">
             <ArrowLeft className="w-4 h-4" /> 返回
           </button>
-          <button onClick={handleDownload} className="p-1.5 rounded-lg text-gray-400 hover:text-[#e60026] hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-all" title="下载">
-            <Download className="w-4 h-4" />
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-[#e60026] hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-all disabled:opacity-50 disabled:cursor-wait"
+            title={downloading ? '正在获取下载链接' : '下载'}
+          >
+            <Download className={`w-4 h-4 ${downloading ? 'animate-pulse' : ''}`} />
           </button>
         </div>
 

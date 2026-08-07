@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { getAlbumDetail } from '@shared'
 import type { SongResult } from '@shared'
@@ -11,8 +11,25 @@ import { ArrowLeft, Disc } from 'lucide-react'
 export default function AlbumPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const [album, setAlbum] = useState<{ name?: string; picUrl?: string; artist?: { id: number; name: string }; description?: string } | null>(null)
   const [songs, setSongs] = useState<SongResult[]>([])
+
+  const returnTo = (() => {
+    const state = location.state as { returnTo?: unknown } | null
+    return typeof state?.returnTo === 'string' && state.returnTo.startsWith('/')
+      ? state.returnTo
+      : null
+  })()
+
+  const handleBack = () => {
+    if (returnTo) {
+      // 替换专辑页历史记录，避免返回歌手页后再次点后退又回到专辑页。
+      navigate(returnTo, { replace: true })
+      return
+    }
+    navigate(-1)
+  }
 
   // 渐进式渲染（专辑可能有几十首歌）
   const {
@@ -39,7 +56,7 @@ export default function AlbumPage() {
     <div>
       {/* Back button */}
       <button
-        onClick={() => navigate(-1)}
+        onClick={handleBack}
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors mb-4"
       >
         <ArrowLeft className="w-4 h-4" />

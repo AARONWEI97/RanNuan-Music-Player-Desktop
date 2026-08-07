@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getMusicCalendar } from '@shared'
+import { getListenReport, getListenTodaySongs, getListenYearReport } from '@shared'
+import { usePlayEventStore } from '@/store/historyStore'
 import { useAuthStore } from '@/store/authStore'
-import { ArrowLeft, Loader, TrendingUp, ChevronLeft, ChevronRight, User, AlertCircle } from 'lucide-react'
+import { ArrowLeft, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface DayData {
   date: string    // 'YYYY-MM-DD'
@@ -11,61 +12,141 @@ interface DayData {
 
 type MonthKey = string  // 'YYYY-MM'
 
+const DATE_KEYS = ['date', 'day', 'listenDate', 'playDate', 'timestamp', 'time'] as const
+const COUNT_KEYS = ['count', 'listenCount', 'playCount', 'songCount', 'totalCount', 'value'] as const
+const COLLECTION_KEYS = ['songs', 'records', 'items', 'resources', 'list'] as const
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function normalizeDate(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? '' : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (/^\d{13}$/.test(trimmed)) return normalizeDate(Number(trimmed))
+  if (/^\d{8}$/.test(trimmed)) return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+  const match = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  return match ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}` : ''
+}
+
+function collectDailyCounts(value: unknown, year: number, result: Map<string, number>, depth = 0) {
+  if (depth > 8 || value === null || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectDailyCounts(item, year, result, depth + 1))
+    return
+  }
+
+  const record = asRecord(value)
+  if (!record) return
+  const dateValue = DATE_KEYS.map((key) => record[key]).find((item) => item !== undefined)
+  const date = normalizeDate(dateValue)
+  let count = COUNT_KEYS
+    .map((key) => Number(record[key]))
+    .find((item) => Number.isFinite(item) && item >= 0)
+
+  if (count === undefined) {
+    const collection = COLLECTION_KEYS
+      .map((key) => record[key])
+      .find((item): item is unknown[] => Array.isArray(item))
+    if (collection) count = collection.length
+  }
+
+  if (date.startsWith(`${year}-`) && count !== undefined) {
+    result.set(date, Math.max(result.get(date) || 0, count))
+  }
+  Object.values(record).forEach((item) => collectDailyCounts(item, year, result, depth + 1))
+}
+
+function extractCollectionCount(value: unknown, depth = 0): number {
+  if (depth > 8 || value === null || typeof value !== 'object') return 0
+  if (Array.isArray(value)) return value.length
+  const record = asRecord(value)
+  if (!record) return 0
+  const directCount = COUNT_KEYS
+    .map((key) => Number(record[key]))
+    .find((item) => Number.isFinite(item) && item >= 0)
+  if (directCount !== undefined) return directCount
+  const collection = COLLECTION_KEYS
+    .map((key) => record[key])
+    .find((item): item is unknown[] => Array.isArray(item))
+  if (collection) return collection.length
+  return Math.max(0, ...Object.values(record).map((item) => extractCollectionCount(item, depth + 1)))
+}
+
 export default function HeatmapPage() {
   const navigate = useNavigate()
-  const profile = useAuthStore(s => s.profile)
+  const playEvents = usePlayEventStore(s => s.events)
   const isLoggedIn = useAuthStore(s => s.isLoggedIn)
 
-  const [calendar, setCalendar] = useState<DayData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [year, setYear] = useState(new Date().getFullYear())
-  const [reloadKey, setReloadKey] = useState(0)
+  const [remoteCalendar, setRemoteCalendar] = useState<DayData[]>([])
   const currentYear = new Date().getFullYear()
 
-  const normalizeDate = (value: unknown) => {
-    if (!value) return ''
-    if (typeof value === 'number') {
-      const d = new Date(value)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const localCalendar = useMemo<DayData[]>(() => {
+    const dailyCounts = new Map<string, number>()
+    for (const event of playEvents) {
+      const date = new Date(event.playedAt)
+      if (date.getFullYear() !== year) continue
+      const dateKey = `${year}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      dailyCounts.set(dateKey, (dailyCounts.get(dateKey) || 0) + 1)
     }
-    const str = String(value)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
-    if (/^\d{8}$/.test(str)) return `${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`
-    return str.slice(0, 10)
-  }
-
-  const normalizeCalendar = (payload: any): DayData[] => {
-    const data = payload?.data?.data || payload?.data || payload
-    const raw = data?.calendar || data?.everyday || data?.list || data
-    if (!Array.isArray(raw)) return []
-    return raw
-      .map((d: any) => ({
-        date: normalizeDate(d.date || d.day || d.time || d.timestamp),
-        count: Number(d.count ?? d.listenCount ?? d.playCount ?? d.songCount ?? d.value ?? d.resources?.length ?? 0),
-      }))
-      .filter((d: DayData) => d.date && d.date.startsWith(`${year}-`))
-  }
+    return Array.from(dailyCounts, ([date, count]) => ({ date, count }))
+  }, [playEvents, year])
 
   useEffect(() => {
-    if (!isLoggedIn || !profile?.userId) {
-      setLoading(false)
-      return
+    let cancelled = false
+    setRemoteCalendar([])
+    if (!isLoggedIn) return () => { cancelled = true }
+
+    const loadRemote = async () => {
+      const dailyCounts = new Map<string, number>()
+      if (year === currentYear) {
+        const [yearResult, todayResult] = await Promise.allSettled([
+          getListenYearReport(),
+          getListenTodaySongs(),
+        ])
+        if (yearResult.status === 'fulfilled') {
+          collectDailyCounts(yearResult.value, year, dailyCounts)
+        }
+        if (todayResult.status === 'fulfilled') {
+          collectDailyCounts(todayResult.value, year, dailyCounts)
+          const todayCount = extractCollectionCount(todayResult.value)
+          if (todayCount > 0) {
+            const now = new Date()
+            const today = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+            dailyCounts.set(today, Math.max(dailyCounts.get(today) || 0, todayCount))
+          }
+        }
+      } else {
+        const endTime = new Date(year, 11, 31).getTime()
+        const report = await getListenReport('year', endTime)
+        collectDailyCounts(report, year, dailyCounts)
+      }
+      if (!cancelled) {
+        setRemoteCalendar(Array.from(dailyCounts, ([date, count]) => ({ date, count })))
+      }
     }
-    setLoading(true)
-    setError('')
-    const start = new Date(year, 0, 1).getTime()
-    const end = new Date(year, 11, 31, 23, 59, 59).getTime()
-    getMusicCalendar(start, end)
-      .then((res: any) => {
-        setCalendar(normalizeCalendar(res))
-      })
-      .catch((e: any) => {
-        setCalendar([])
-        setError(e?.response?.data?.message || e?.message || '听歌日历加载失败，请稍后重试')
-      })
-      .finally(() => setLoading(false))
-  }, [profile?.userId, isLoggedIn, year, reloadKey])
+
+    loadRemote().catch(() => {
+      if (!cancelled) setRemoteCalendar([])
+    })
+    return () => { cancelled = true }
+  }, [currentYear, isLoggedIn, year])
+
+  const calendar = useMemo<DayData[]>(() => {
+    const merged = new Map<string, number>()
+    for (const item of remoteCalendar) merged.set(item.date, item.count)
+    for (const item of localCalendar) {
+      merged.set(item.date, Math.max(merged.get(item.date) || 0, item.count))
+    }
+    return Array.from(merged, ([date, count]) => ({ date, count }))
+  }, [localCalendar, remoteCalendar])
 
   // build date-count map
   const countMap = useMemo(() => {
@@ -154,26 +235,7 @@ export default function HeatmapPage() {
         </div>
       </div>
 
-      {!isLoggedIn ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <User className="w-12 h-12 mb-4 opacity-30" />
-          <p>请先登录</p>
-          <button onClick={() => navigate('/login')} className="mt-3 px-4 py-2 bg-[#e60026] text-white rounded-lg text-sm font-medium hover:bg-[#c4001f] transition-colors">
-            去登录
-          </button>
-        </div>
-      ) : loading ? (
-        <div className="flex justify-center py-16"><Loader className="w-6 h-6 animate-spin text-[#e60026]" /></div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-          <AlertCircle className="w-12 h-12 mb-4 opacity-30" />
-          <p className="text-sm">{error}</p>
-          <button onClick={() => setReloadKey(k => k + 1)} className="mt-3 px-4 py-2 bg-[#e60026] text-white rounded-lg text-sm font-medium hover:bg-[#c4001f] transition-colors">
-            重试
-          </button>
-        </div>
-      ) : (
-        <>
+      <>
           {/* summary */}
           <div className="flex items-center gap-4 mb-5 p-4 rounded-xl bg-gray-50 dark:bg-white/[0.03]">
             <div className="flex items-center gap-2">
@@ -233,8 +295,7 @@ export default function HeatmapPage() {
               </div>
             ))}
           </div>
-        </>
-      )}
+      </>
     </div>
   )
 }

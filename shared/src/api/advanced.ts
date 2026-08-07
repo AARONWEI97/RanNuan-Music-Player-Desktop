@@ -10,7 +10,26 @@ export const getAnnualSummary = (year: number) => {
   return request.get('/summary/annual', { params: { year } });
 };
 
-/** 音乐日历（按时间范围查询听歌记录） */
+export type ListenReportPeriod = 'week' | 'month' | 'year';
+
+/** 当前账号的年度听歌足迹 */
+export const getListenYearReport = () => {
+  return request.get('/listen/data/year/report');
+};
+
+/** 当前账号今日收听歌曲 */
+export const getListenTodaySongs = () => {
+  return request.get('/listen/data/today/song');
+};
+
+/** 当前账号周/月/年收听报告 */
+export const getListenReport = (type: ListenReportPeriod, endTime?: number) => {
+  return request.get('/listen/data/report', {
+    params: { type, ...(endTime ? { endTime } : {}) },
+  });
+};
+
+/** 音乐日历（歌曲、专辑和活动日程，不是用户听歌次数） */
 export const getMusicCalendar = (startTime: number, endTime: number) => {
   return request.get('/calendar', { params: { startTime, endTime } });
 };

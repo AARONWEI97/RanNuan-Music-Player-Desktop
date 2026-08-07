@@ -9,7 +9,6 @@ import Sidebar from './Sidebar'
 import PlayerBar from './PlayerBar'
 import TitleBar from './TitleBar'
 import PlaylistDrawer from './PlaylistDrawer'
-import LyricsPanel from './LyricsPanel'
 import GlobalSearch from './GlobalSearch'
 import MiniPlayer from './MiniPlayer'
 import FloatingLyrics from './FloatingLyrics'
@@ -158,7 +157,6 @@ export default function Layout({ children }: { children: ReactNode }) {
     return (
       <div className="w-full h-full bg-transparent overflow-hidden">
         <MiniPlayer onRestore={exitMiniMode} onPlaylistToggle={handlePlaylistToggle} />
-        <LyricsPanel />
         <FloatingLyrics />
         <ContextMenu menu={menu} />
       </div>
@@ -175,7 +173,6 @@ export default function Layout({ children }: { children: ReactNode }) {
         </main>
       </div>
       <PlaylistDrawer />
-      <LyricsPanel />
       <GlobalSearch />
       <PlayerBar onMiniMode={enterMiniMode} />
       <FloatingLyrics />

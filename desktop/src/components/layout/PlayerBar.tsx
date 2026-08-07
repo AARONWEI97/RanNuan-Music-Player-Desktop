@@ -7,6 +7,7 @@ import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
 import { thumbUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
 import SourceSelector from '@/components/player/SourceSelector'
+import { setLyricsWindow } from '@/services/playerBridge'
 
 function fmtMs(ms: number) {
   if (!ms || ms < 0) return '00:00'
@@ -118,8 +119,10 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
 
   // ── lyrics toggle ──
   const openLyrics = () => {
-    // Ctrl+L keyboard event → LyricsPanel listens on window
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }))
+    setLyricsWindow(true).catch((error) => {
+      console.error('[PlayerBar] 打开桌面歌词失败:', error)
+      showToast('桌面歌词打开失败', '请确认当前运行的是桌面版')
+    })
   }
 
   // ═══════════ RENDER ═══════════
@@ -238,7 +241,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
 
           <SourceSelector />
 
-          <button onClick={openLyrics} title="歌词 (Ctrl+L)"
+          <button onClick={openLyrics} title="打开桌面歌词"
             className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-[#e60026] transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04]">
             <Mic2 className="w-[17px] h-[17px]" />
           </button>

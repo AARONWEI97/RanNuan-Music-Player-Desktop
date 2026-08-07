@@ -82,7 +82,7 @@ export default function TrayPanelApp() {
   const currentLyric = s.lyric && s.lyric.index >= 0 ? s.lyric.lines[s.lyric.index] : null
 
   return (
-    <div className="w-screen h-screen p-3 overflow-hidden bg-transparent select-none">
+    <div className="w-screen h-screen overflow-hidden bg-transparent select-none">
       <div
         className="relative w-full h-full flex flex-col rounded-[22px] overflow-hidden animate-panel-in"
         style={{

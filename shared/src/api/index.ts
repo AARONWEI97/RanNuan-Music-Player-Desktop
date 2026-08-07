@@ -235,6 +235,9 @@ export {
 export {
   getFirstListenInfo,
   getAnnualSummary,
+  getListenYearReport,
+  getListenTodaySongs,
+  getListenReport,
   getMusicCalendar,
   getAidjContentRcmd,
   getRadioSport,
