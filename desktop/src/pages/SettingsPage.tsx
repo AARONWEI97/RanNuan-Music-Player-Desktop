@@ -1,7 +1,8 @@
-import { useSettingsStore } from '@shared'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react'
+import { useSettingsStore, type ThemeType } from '@shared'
 import {
-  Sun, Moon, Music, Play, Info, Zap, Monitor, Volume2,
+  Sun, Moon, Music, Play, Info, Zap, Monitor, Volume2, PawPrint,
   RotateCcw, ExternalLink,
 } from 'lucide-react'
 import { showToast } from '@/utils/toast'
@@ -80,9 +81,12 @@ function SelectField({
 export default function SettingsPage() {
   const settings = useSettingsStore()
   const [tab, setTab] = useState<SettingTab>('general')
+  const isDogTheme = settings.theme === 'dog-light' || settings.theme === 'dog-dark'
+  const isDarkTheme = settings.theme === 'dark' || settings.theme === 'dog-dark'
 
   const handleReset = () => {
     settings.setApiBaseUrl('http://139.9.223.233:3000')
+    settings.setTheme('dog-light')
     settings.setUnblockServiceUrl('')
     settings.setLxmusicApiUrl('')
     settings.setCustomApiUrl('')
@@ -129,9 +133,24 @@ export default function SettingsPage() {
       {tab === 'general' && (
         <>
           <Section title="外观">
-            <Row icon={settings.theme === 'dark' ? Moon : Sun} label="深色模式"
-              desc={settings.theme === 'dark' ? '当前：深色主题' : '当前：浅色主题'}>
-              <Toggle checked={settings.theme === 'dark'} onChange={(v) => settings.setTheme(v ? 'dark' : 'light')} />
+            <Row icon={isDarkTheme ? Moon : Sun} label="深色模式"
+              desc={isDogTheme ? (isDarkTheme ? '当前：狗狗深色主题' : '当前：狗狗浅色主题') : (isDarkTheme ? '当前：深色主题' : '当前：浅色主题')}>
+              <Toggle checked={isDarkTheme} onChange={(v) => {
+                if (isDogTheme) settings.setTheme(v ? 'dog-dark' : 'dog-light')
+                else settings.setTheme(v ? 'dark' : 'light')
+              }} />
+            </Row>
+            <Row icon={PawPrint} label="宠物皮肤"
+              desc={isDogTheme ? '柔光陪伴氛围已开启' : '奶油柔光 + 角落陪伴，偏氛围感皮肤'} last>
+              <SelectField
+                value={isDogTheme ? settings.theme : 'off'}
+                onChange={(value) => settings.setTheme((value === 'off' ? 'light' : value) as ThemeType)}
+                options={[
+                  { label: '关闭', value: 'off' },
+                  { label: '狗狗奶油', value: 'dog-light' },
+                  { label: '狗狗可可', value: 'dog-dark' },
+                ]}
+              />
             </Row>
           </Section>
 

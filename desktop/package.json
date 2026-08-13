@@ -1,13 +1,14 @@
 {
   "name": "@rannuan/desktop",
   "private": true,
-  "version": "3.3.0",
+  "version": "3.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "tauri": "tauri",
     "tauri-dev": "tauri dev",
-    "build": "vite build",
+    "sync-version": "node scripts/sync-version.mjs",
+    "build": "node scripts/sync-version.mjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

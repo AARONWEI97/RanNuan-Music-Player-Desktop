@@ -396,3 +396,646 @@ body.transparent-window #root {
     animation: none;
   }
 }
+
+/* ═══════════════ Logo pet skin (atmosphere) ═══════════════
+   Borrow the idea of a character skin (presence + mood), but avoid sticker frames.
+   Atmosphere comes from soft light blobs, glass panels, vignette and a quiet companion. */
+html.dog-theme {
+  --dog-cream: #fff6ec;
+  --dog-surface: #ffe9d4;
+  --dog-surface-strong: #f5d7bc;
+  --dog-ink: #5b4a43;
+  --dog-muted: #927d70;
+  --dog-border: color-mix(in srgb, #e4cdb8 70%, transparent);
+  --dog-accent: #b86f58;
+  --dog-accent-strong: #965441;
+  --dog-sage: #7c9b94;
+  --dog-sage-soft: #d9ebe5;
+  --dog-peach: #ffc4a8;
+  --dog-glass: color-mix(in srgb, #fffaf4 72%, transparent);
+  --dog-glass-strong: color-mix(in srgb, #fff3e6 82%, transparent);
+  color-scheme: light;
+}
+
+html.dark.dog-theme {
+  --dog-cream: #241915;
+  --dog-surface: #34251e;
+  --dog-surface-strong: #463327;
+  --dog-ink: #ffe8d7;
+  --dog-muted: #c6a696;
+  --dog-border: color-mix(in srgb, #60473a 75%, transparent);
+  --dog-accent: #e19a7d;
+  --dog-accent-strong: #f1b297;
+  --dog-sage: #9dbdb5;
+  --dog-sage-soft: #2a403c;
+  --dog-peach: #8a5a42;
+  --dog-glass: color-mix(in srgb, #2b211d 68%, transparent);
+  --dog-glass-strong: color-mix(in srgb, #3b2c25 78%, transparent);
+  color-scheme: dark;
+}
+
+html.dog-theme body {
+  background: var(--dog-cream);
+  color: var(--dog-ink);
+}
+
+.dog-app-shell {
+  transition: background-color 280ms ease, color 280ms ease;
+}
+
+/* Quiet by default — ambiance only paints under dog-theme */
+.dog-ambiance {
+  display: none;
+}
+
+html.dog-theme .dog-ambiance {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+html.dog-theme .dog-app-shell {
+  background:
+    radial-gradient(120% 80% at 12% -10%, color-mix(in srgb, var(--dog-peach) 28%, transparent), transparent 55%),
+    radial-gradient(90% 70% at 92% 108%, color-mix(in srgb, var(--dog-sage) 22%, transparent), transparent 50%),
+    linear-gradient(165deg, color-mix(in srgb, var(--dog-surface) 55%, transparent), transparent 46%),
+    var(--dog-cream) !important;
+  color: var(--dog-ink);
+}
+
+html.dog-theme .dog-app-shell main {
+  background: transparent;
+}
+
+.dog-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  will-change: transform;
+  opacity: 0.55;
+}
+
+.dog-blob-a {
+  width: min(46vw, 420px);
+  height: min(46vw, 420px);
+  left: -8%;
+  top: -12%;
+  background: radial-gradient(circle at 40% 40%, color-mix(in srgb, var(--dog-peach) 70%, white), transparent 68%);
+  animation: dogBlobDriftA 18s ease-in-out infinite;
+}
+
+.dog-blob-b {
+  width: min(40vw, 360px);
+  height: min(40vw, 360px);
+  right: -6%;
+  top: 28%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--dog-sage) 55%, white), transparent 70%);
+  animation: dogBlobDriftB 22s ease-in-out infinite;
+}
+
+.dog-blob-c {
+  width: min(36vw, 320px);
+  height: min(36vw, 320px);
+  left: 28%;
+  bottom: -14%;
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--dog-accent) 35%, white), transparent 72%);
+  opacity: 0.35;
+  animation: dogBlobDriftC 26s ease-in-out infinite;
+}
+
+.dog-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 100% at 50% 40%, transparent 42%, color-mix(in srgb, var(--dog-cream) 55%, transparent) 100%),
+    linear-gradient(180deg, color-mix(in srgb, #fff 18%, transparent), transparent 18%, transparent 78%, color-mix(in srgb, var(--dog-cream) 35%, transparent));
+}
+
+.dog-dust {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, color-mix(in srgb, var(--dog-accent) 45%, transparent), transparent),
+    radial-gradient(1.2px 1.2px at 68% 18%, color-mix(in srgb, var(--dog-sage) 50%, transparent), transparent),
+    radial-gradient(1px 1px at 42% 64%, color-mix(in srgb, #fff 55%, transparent), transparent),
+    radial-gradient(1.4px 1.4px at 86% 72%, color-mix(in srgb, var(--dog-peach) 55%, transparent), transparent),
+    radial-gradient(1px 1px at 24% 80%, color-mix(in srgb, var(--dog-sage) 40%, transparent), transparent);
+  animation: dogDustDrift 28s linear infinite;
+}
+
+html.dark.dog-theme .dog-blob {
+  opacity: 0.4;
+}
+
+html.dark.dog-theme .dog-dust {
+  opacity: 0.22;
+}
+
+html.dog-theme .dog-titlebar {
+  position: relative;
+  z-index: 2;
+  background: var(--dog-glass) !important;
+  border-color: var(--dog-border) !important;
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 35%, transparent);
+}
+
+html.dog-theme .dog-sidebar {
+  background: var(--dog-glass-strong) !important;
+  border-color: var(--dog-border) !important;
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, #fff 22%, transparent),
+    8px 0 28px color-mix(in srgb, var(--dog-ink) 4%, transparent);
+}
+
+html.dog-theme .dog-player-bar {
+  position: relative;
+  z-index: 2;
+  background: var(--dog-glass) !important;
+  border-color: var(--dog-border) !important;
+  border-top-style: solid;
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  box-shadow:
+    0 -12px 40px color-mix(in srgb, var(--dog-peach) 12%, transparent),
+    0 -1px 0 color-mix(in srgb, #fff 28%, transparent);
+}
+
+html.dog-theme .dog-brand {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dog-surface) 45%, transparent), transparent);
+}
+
+html.dog-theme .dog-sidebar::after {
+  position: absolute;
+  top: 120px;
+  right: 0;
+  bottom: 96px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--dog-sage) 35%, transparent) 20%,
+    color-mix(in srgb, var(--dog-accent) 28%, transparent) 55%,
+    transparent
+  );
+  content: '';
+  pointer-events: none;
+}
+
+html.dog-theme .dog-sidebar a[aria-current='page'] {
+  position: relative;
+  color: var(--dog-accent-strong) !important;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--dog-accent) 18%, transparent), color-mix(in srgb, var(--dog-peach) 10%, transparent) 70%, transparent) !important;
+  box-shadow:
+    inset 3px 0 0 var(--dog-accent),
+    0 8px 22px color-mix(in srgb, var(--dog-accent) 12%, transparent);
+  border-radius: 16px;
+}
+
+html.dog-theme .dog-sidebar a:not([aria-current='page']):hover,
+html.dog-theme .dog-sidebar button:hover {
+  color: var(--dog-accent-strong) !important;
+  background: color-mix(in srgb, var(--dog-surface-strong) 48%, transparent) !important;
+}
+
+/* Match complete utility tokens. A substring selector would also match
+   hover:bg-[#e60026]/8 and force hover-only buttons into a solid block. */
+html.dog-theme .dog-sidebar [class~="text-[#e60026]"],
+html.dog-theme .dog-app-shell [class~="text-[#e60026]"] {
+  color: var(--dog-accent) !important;
+}
+
+html.dog-theme .dog-app-shell [class~="bg-[#e60026]"] {
+  background-color: var(--dog-accent) !important;
+}
+
+html.dog-theme .dog-app-shell [class~="border-[#e60026]"] {
+  border-color: var(--dog-accent) !important;
+}
+
+html.dog-theme .dog-app-shell [class~="from-[#e60026]"] {
+  --tw-gradient-from: var(--dog-accent) var(--tw-gradient-from-position);
+}
+
+.dog-nav-paw {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--dog-sage);
+  opacity: 0.85;
+  transform: rotate(-14deg);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--dog-sage) 45%, transparent));
+  animation: dogPawPulse 2.8s ease-in-out infinite;
+}
+
+.dog-main > :not(.dog-corner-pet) {
+  position: relative;
+  z-index: 1;
+}
+
+.dog-corner-pet {
+  position: absolute;
+  right: -18px;
+  bottom: 8px;
+  z-index: 0;
+  display: none;
+  width: min(28vw, 260px);
+  pointer-events: none;
+  opacity: 0.14;
+  transform: rotate(-6deg);
+  transform-origin: bottom right;
+  filter: saturate(0.85) sepia(0.08);
+  animation: dogPetBreathe 6.5s ease-in-out infinite;
+}
+
+.dog-corner-glow {
+  position: absolute;
+  inset: 18% 8% 8% 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--dog-peach) 55%, transparent), transparent 70%);
+  filter: blur(18px);
+  opacity: 0.7;
+}
+
+html.dog-theme .dog-corner-pet {
+  display: block;
+}
+
+html.dark.dog-theme .dog-corner-pet {
+  opacity: 0.18;
+  filter: saturate(0.75) brightness(0.85);
+}
+
+.dog-corner-pet img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  mask-image: radial-gradient(ellipse at 55% 55%, #000 42%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse at 55% 55%, #000 42%, transparent 78%);
+}
+
+@keyframes dogBlobDriftA {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(4%, 6%, 0) scale(1.06); }
+}
+
+@keyframes dogBlobDriftB {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-5%, -4%, 0) scale(1.08); }
+}
+
+@keyframes dogBlobDriftC {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(3%, -5%, 0) scale(1.05); }
+}
+
+@keyframes dogDustDrift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-1.5%, -2%, 0); }
+}
+
+@keyframes dogPetBreathe {
+  0%, 100% { transform: rotate(-6deg) translate3d(0, 0, 0) scale(1); opacity: 0.12; }
+  50% { transform: rotate(-4deg) translate3d(-6px, -8px, 0) scale(1.03); opacity: 0.18; }
+}
+
+@keyframes dogPawPulse {
+  0%, 100% { opacity: 0.7; transform: rotate(-14deg) scale(1); }
+  50% { opacity: 1; transform: rotate(-8deg) scale(1.08); }
+}
+
+/* ── Title stickers / chips ── */
+html.dog-theme .dog-titlebar {
+  overflow: hidden;
+}
+
+html.dog-theme .dog-version-chip {
+  color: var(--dog-accent-strong);
+  background: color-mix(in srgb, var(--dog-peach) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dog-accent) 28%, transparent);
+  border-radius: 999px 12px 999px 14px;
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 40%, transparent);
+}
+
+html.dog-theme .dog-title-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--dog-accent-strong);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--dog-surface) 80%, transparent), color-mix(in srgb, var(--dog-sage-soft) 55%, transparent));
+  border: 1px dashed color-mix(in srgb, var(--dog-sage) 45%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--dog-peach) 18%, transparent);
+}
+
+.dog-title-stickers {
+  display: none;
+}
+
+html.dog-theme .dog-title-stickers {
+  display: flex;
+}
+
+.dog-sticker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9px 12px 8px 11px;
+  color: var(--dog-accent-strong);
+  background: color-mix(in srgb, var(--dog-glass-strong) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--dog-border) 90%, transparent);
+  box-shadow:
+    0 4px 10px color-mix(in srgb, var(--dog-ink) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent);
+  transform: rotate(var(--r, 0deg)) translateY(0);
+  animation: dogStickerFloat 4.8s ease-in-out infinite;
+}
+
+.dog-sticker:nth-child(2) { animation-delay: 0.4s; }
+.dog-sticker:nth-child(3) { animation-delay: 0.9s; }
+.dog-sticker:nth-child(4) { animation-delay: 1.3s; }
+.dog-sticker:nth-child(5) { animation-delay: 1.8s; }
+
+.dog-sticker-logo {
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.dog-sticker-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.dog-sticker-paw { color: var(--dog-sage); }
+.dog-sticker-bone { color: var(--dog-accent); }
+.dog-sticker-heart { color: #d97979; }
+.dog-sticker-soft { opacity: 0.72; width: 18px; height: 18px; }
+
+@keyframes dogStickerFloat {
+  0%, 100% { transform: rotate(var(--r, 0deg)) translateY(0); }
+  50% { transform: rotate(calc(var(--r, 0deg) + 4deg)) translateY(-2px); }
+}
+
+/* Soft window controls — only under dog skin */
+html.dog-theme .dog-win-controls {
+  gap: 2px;
+  padding-right: 4px;
+}
+
+html.dog-theme .dog-win-btn {
+  width: 30px !important;
+  height: 22px !important;
+  margin: auto 2px;
+  border-radius: 999px;
+  color: var(--dog-muted) !important;
+  background: color-mix(in srgb, var(--dog-surface) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dog-border) 80%, transparent);
+}
+
+html.dog-theme .dog-win-btn:hover {
+  color: var(--dog-accent-strong) !important;
+  background: color-mix(in srgb, var(--dog-peach) 28%, transparent) !important;
+}
+
+html.dog-theme .dog-win-close:hover {
+  background: color-mix(in srgb, #e25b5b 78%, white) !important;
+  color: #fff !important;
+  border-color: transparent;
+}
+
+/* ── Player exclusive controls ── */
+html.dog-theme .dog-play-btn {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 16px 18px 14px 20px !important;
+  background:
+    radial-gradient(circle at 30% 28%, color-mix(in srgb, #fff 35%, transparent), transparent 45%),
+    linear-gradient(145deg, var(--dog-accent-strong), var(--dog-accent)) !important;
+  box-shadow:
+    0 8px 18px color-mix(in srgb, var(--dog-accent) 32%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent) !important;
+}
+
+html.dog-theme .dog-play-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+  filter: saturate(1.08);
+}
+
+html.dog-theme .dog-player-bar button:not(.dog-play-btn) {
+  border-radius: 12px !important;
+}
+
+html.dog-theme .dog-player-bar button:not(.dog-play-btn):hover {
+  background: color-mix(in srgb, var(--dog-surface-strong) 55%, transparent) !important;
+  color: var(--dog-accent-strong) !important;
+}
+
+html.dog-theme .dog-progress {
+  height: 6px !important;
+}
+
+html.dog-theme .dog-progress-track {
+  background: color-mix(in srgb, var(--dog-surface-strong) 70%, transparent) !important;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--dog-ink) 8%, transparent);
+}
+
+html.dog-theme .dog-progress-fill {
+  background: linear-gradient(90deg, var(--dog-accent), color-mix(in srgb, var(--dog-peach) 70%, var(--dog-accent))) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--dog-accent) 35%, transparent);
+}
+
+html.dog-theme .dog-progress-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  margin-left: -2px;
+  border-radius: 40% 60% 55% 45% / 45% 40% 60% 55% !important;
+  background: linear-gradient(145deg, var(--dog-accent-strong), var(--dog-accent)) !important;
+  border: 2px solid color-mix(in srgb, #fff 70%, transparent);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--dog-accent) 35%, transparent);
+  opacity: 1 !important;
+}
+
+html.dog-theme .dog-cover {
+  overflow: visible !important;
+  border-radius: 14px 16px 12px 18px !important;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--dog-ink) 10%, transparent);
+}
+
+html.dog-theme .dog-cover > img,
+html.dog-theme .dog-cover > div {
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+html.dog-theme .dog-cover::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -2px;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff, var(--dog-peach));
+  border: 1px solid color-mix(in srgb, var(--dog-accent) 30%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--dog-accent) 25%, transparent);
+  opacity: 0.9;
+}
+
+html.dog-theme .dog-tip {
+  border-radius: 999px 12px 999px 10px !important;
+  border-color: color-mix(in srgb, var(--dog-border) 90%, transparent) !important;
+  background: var(--dog-glass-strong) !important;
+  color: var(--dog-ink) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Soft organic buttons across main content under dog skin */
+html.dog-theme .dog-app-shell button[class*="bg-[#e60026]"],
+html.dog-theme .dog-app-shell a[class*="bg-[#e60026]"] {
+  border-radius: 16px 18px 14px 20px !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--dog-accent) 22%, transparent);
+}
+
+html.dog-theme .dog-app-shell .rounded-full[class*="bg-[#e60026]"] {
+  border-radius: 999px !important;
+}
+
+/* Volume bar matches progress mood */
+html.dog-theme .dog-volume {
+  height: 5px !important;
+  background: color-mix(in srgb, var(--dog-surface-strong) 70%, transparent) !important;
+}
+
+html.dog-theme .dog-volume > div:first-child {
+  background: linear-gradient(90deg, var(--dog-sage), var(--dog-accent)) !important;
+  border-radius: inherit;
+}
+
+/* Content polish — quiet, global, no sticky decorations */
+html.dog-theme ::selection {
+  background: color-mix(in srgb, var(--dog-accent) 28%, transparent);
+  color: var(--dog-ink);
+}
+
+html.dog-theme .song-row-item {
+  border-radius: 14px;
+  transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+html.dog-theme .song-row-item:hover {
+  background: color-mix(in srgb, var(--dog-surface) 72%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--dog-accent) 55%, transparent);
+}
+
+html.dog-theme .grid-card-item,
+html.dog-theme .artist-grid-card {
+  transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease;
+}
+
+html.dog-theme .grid-card-item:hover,
+html.dog-theme .artist-grid-card:hover {
+  transform: translateY(-3px);
+  filter: saturate(1.04);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--dog-ink) 10%, transparent);
+}
+
+html.dog-theme .dog-main h2,
+html.dog-theme .dog-main h3 {
+  letter-spacing: -0.01em;
+}
+
+html.dog-theme .dog-main h2.text-xl {
+  position: relative;
+  padding-left: 12px;
+}
+
+html.dog-theme .dog-main h2.text-xl::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.28em;
+  bottom: 0.28em;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--dog-accent), var(--dog-sage));
+}
+
+html.dog-theme .dog-sidebar .border-t {
+  border-color: var(--dog-border) !important;
+}
+
+html.dog-theme .dog-brand {
+  border-color: var(--dog-border) !important;
+}
+
+html.dog-theme .animate-pulse-ring {
+  border-color: color-mix(in srgb, var(--dog-accent) 40%, transparent) !important;
+}
+
+/* Scrollbar tint */
+html.dog-theme ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--dog-accent) 35%, transparent);
+  border-radius: 999px;
+}
+
+html.dog-theme ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--dog-accent) 55%, transparent);
+}
+
+html.dog-theme ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dog-blob,
+  .dog-dust,
+  .dog-corner-pet,
+  .dog-nav-paw,
+  .dog-sticker {
+    animation: none !important;
+  }
+}
+
+/* Keep the pet mark out of the way on compact windows. */
+@media (max-width: 920px) {
+  .dog-corner-pet {
+    width: 180px;
+    right: -28px;
+    bottom: 6px;
+    opacity: 0.1;
+  }
+
+  .dog-blob {
+    filter: blur(36px);
+    opacity: 0.4;
+  }
+
+  html.dog-theme .dog-title-stickers {
+    display: none;
+  }
+
+  html.dog-theme .dog-title-chip {
+    display: none;
+  }
+}

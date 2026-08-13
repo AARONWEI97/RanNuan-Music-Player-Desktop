@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '@shared'
 import { useAuthStore } from '@/store/authStore'
 import { thumbUrl } from '@/utils/image'
-import { Home, Search, Library, Heart, Settings, Sun, Moon, Clock, HardDrive, Trophy, LogIn, LogOut, User, Download, Coffee, Globe } from 'lucide-react'
+import { Home, Search, Library, Heart, Settings, Sun, Moon, Clock, HardDrive, Trophy, LogIn, LogOut, User, Download, Coffee, Globe, PawPrint } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: '首页', icon: Home },
@@ -20,10 +20,15 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const { theme, setTheme } = useSettingsStore()
   const { isLoggedIn, profile, logout } = useAuthStore()
-  const isDark = theme === 'dark'
+  const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
+  const isDark = theme === 'dark' || theme === 'dog-dark'
 
   const toggleTheme = () => {
-    setTheme(isDark ? 'light' : 'dark')
+    if (isDogTheme) {
+      setTheme(isDark ? 'dog-light' : 'dog-dark')
+    } else {
+      setTheme(isDark ? 'light' : 'dark')
+    }
   }
 
   const handleLogout = async () => {
@@ -31,9 +36,9 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-52 flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#121212]">
+    <aside className="dog-sidebar relative w-52 flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#121212]">
       {/* Logo */}
-      <div className="relative px-3 py-3.5 select-none border-b border-gray-200/50 dark:border-white/[0.04]">
+      <div className="dog-brand relative px-3 py-3.5 select-none border-b border-gray-200/50 dark:border-white/[0.04]">
         {/* brand glow */}
         <div className="absolute -inset-2 bg-[#e60026]/[0.03] dark:bg-[#e60026]/[0.02] rounded-2xl blur-xl opacity-0 hover:opacity-100 transition-opacity duration-500" />
         <div className="flex items-center gap-2 relative">
@@ -57,7 +62,7 @@ export default function Sidebar() {
               RanNuan
             </span>
             <span className="text-[9px] text-gray-400 dark:text-gray-500 tracking-widest uppercase -mt-0.5">
-              Music Player
+              {isDogTheme ? 'Pet Radio' : 'Music Player'}
             </span>
           </div>
         </div>
@@ -69,15 +74,22 @@ export default function Sidebar() {
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+              `flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
                 isActive
                   ? 'bg-gradient-to-r from-[#e60026]/10 to-transparent text-[#e60026] font-semibold shadow-sm'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-gray-200'
               }`
             }
           >
-            <item.icon className="w-4 h-4" />
-            {item.label}
+            {({ isActive }) => (
+              <>
+                <span className="flex min-w-0 items-center gap-3">
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </span>
+                {isDogTheme && isActive && <PawPrint className="dog-nav-paw" aria-hidden />}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

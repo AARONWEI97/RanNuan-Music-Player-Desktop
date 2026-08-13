@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { usePlayerStore, usePlaylistStore } from '@shared'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart, Loader2 } from 'lucide-react'
+import { usePlayerStore, usePlaylistStore, useSettingsStore } from '@shared'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart, Loader2, PawPrint } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume, setPlaybackRate } from '@/services/audioService'
 import { useRef, useCallback, useState } from 'react'
 import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
@@ -20,6 +20,8 @@ interface PlayerBarProps { onMiniMode?: () => void }
 export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
   const navigate = useNavigate()
   const location = useLocation()
+  const theme = useSettingsStore((s) => s.theme)
+  const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
   const { playMusic, isPlay, currentProgress, duration, volume, isMuted, isLoading, playbackRate } = usePlayerStore()
   const { playMode, setPlayMode, prevPlay, nextPlay, getCurrentSong, setShowPlaylistDrawer, playList } = usePlaylistStore()
   const dragging = useRef(false)
@@ -127,7 +129,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
 
   // ═══════════ RENDER ═══════════
   return (
-    <div className="h-[64px] flex items-center px-3 gap-2 border-t border-gray-200/80 dark:border-gray-800 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-sm flex-shrink-0">
+    <div className="dog-player-bar h-[64px] flex items-center px-3 gap-2 border-t border-gray-200/80 dark:border-gray-800 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-sm flex-shrink-0">
       {/* ── LEFT: song info ── */}
       <div className="w-[220px] flex items-center gap-2 overflow-hidden">
         <div
@@ -147,7 +149,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
           }}
         >
           {/* cover */}
-          <div className="relative w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-700 flex-shrink-0 overflow-hidden group-hover:ring-2 group-hover:ring-[#e60026]/30 transition-all duration-200">
+          <div className="relative w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-700 flex-shrink-0 overflow-hidden group-hover:ring-2 group-hover:ring-[#e60026]/30 transition-all duration-200 dog-cover">
             {(() => {
               const img = playMusic?.picUrl || playMusic?.al?.picUrl || playMusic?.album?.picUrl
               return img ? (
@@ -215,7 +217,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
             <button onClick={togglePlay}
               aria-busy={isLoading}
               title={isLoading ? '歌曲加载中' : (isPlay ? '暂停' : '播放')}
-              className="relative w-9 h-9 flex items-center justify-center rounded-full bg-[#e60026] text-white hover:bg-[#c4001f] hover:shadow-lg hover:shadow-[#e60026]/25 active:scale-95 transition-all duration-150">
+              className="dog-play-btn relative w-9 h-9 flex items-center justify-center rounded-full bg-[#e60026] text-white hover:bg-[#c4001f] hover:shadow-lg hover:shadow-[#e60026]/25 active:scale-95 transition-all duration-150">
               {isLoading
                 ? <Loader2 className="w-[15px] h-[15px] animate-spin" />
                 : isPlay
@@ -251,26 +253,28 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
         <div className="w-full max-w-[420px] flex items-center gap-2">
           <span className="text-[10px] text-gray-400 dark:text-gray-500 w-8 text-right tabular-nums select-none">{fmtMs(currentProgress)}</span>
           <div id="player-progress"
-            className="flex-1 h-1 relative cursor-pointer group"
+            className="dog-progress flex-1 h-1 relative cursor-pointer group"
             onMouseDown={progressMouseDown}
             onMouseMove={progressMove}
             onMouseLeave={progressLeave}
           >
             {/* bg track */}
-            <div className="absolute inset-0 rounded-full bg-gray-200 dark:bg-gray-700/80 group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors" />
+            <div className="dog-progress-track absolute inset-0 rounded-full bg-gray-200 dark:bg-gray-700/80 group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors" />
             {/* fill */}
             <div
-              className="absolute top-0 left-0 h-full rounded-full bg-[#e60026] group-hover:bg-[#ff2a2a] transition-colors"
+              className="dog-progress-fill absolute top-0 left-0 h-full rounded-full bg-[#e60026] group-hover:bg-[#ff2a2a] transition-colors"
               style={{ width: `${displayPct}%` }}
             />
             {/* dragging thumb */}
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-[#e60026] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+              className="dog-progress-thumb absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-[#e60026] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center justify-center"
               style={{ left: `calc(${displayPct}% - 6px)` }}
-            />
+            >
+              {isDogTheme && <PawPrint className="w-2 h-2 text-white" strokeWidth={2.5} />}
+            </div>
             {/* hover time tip */}
             {hoverProgress !== null && duration > 0 && (
-              <div className="absolute -top-7 text-[10px] font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-md border border-gray-100 dark:border-gray-600 whitespace-nowrap pointer-events-none"
+              <div className="dog-tip absolute -top-7 text-[10px] font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-md border border-gray-100 dark:border-gray-600 whitespace-nowrap pointer-events-none"
                 style={{ left: `${Math.min(100, Math.max(0, hoverProgress))}%`, transform: 'translateX(-50%)' }}>
                 {fmtMs((hoverProgress / 100) * duration)}
               </div>
@@ -308,7 +312,7 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
         {/* volume bar */}
         <div className="relative group flex items-center">
           <div id="player-volume"
-            className="w-[72px] h-1 rounded-full bg-gray-200 dark:bg-gray-700/80 cursor-pointer group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors relative"
+            className="dog-volume w-[72px] h-1 rounded-full bg-gray-200 dark:bg-gray-700/80 cursor-pointer group-hover:bg-gray-300 dark:group-hover:bg-gray-600 transition-colors relative"
             onClick={handleVolumeClick}
             onMouseDown={handleVolumeMouseDown}
             onWheel={handleVolumeWheel}>

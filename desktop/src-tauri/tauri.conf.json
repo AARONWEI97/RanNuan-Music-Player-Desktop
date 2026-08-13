@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "RanNuan Music",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "identifier": "com.rannuan.music",
   "build": {
     "frontendDist": "../dist",
@@ -51,7 +51,9 @@
         "displayLanguageSelector": false,
         "installerIcon": "icon.ico",
         "installMode": "currentUser",
-        "languages": ["SimpChinese"],
+        "languages": [
+          "SimpChinese"
+        ],
         "compression": "lzma"
       }
     },

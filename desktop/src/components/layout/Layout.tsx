@@ -155,7 +155,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (isMiniPlayer) {
     return (
-      <div className="w-full h-full bg-transparent overflow-hidden">
+      <div className="dog-app-shell w-full h-full bg-transparent overflow-hidden">
         <MiniPlayer onRestore={exitMiniMode} onPlaylistToggle={handlePlaylistToggle} />
         <FloatingLyrics />
         <ContextMenu menu={menu} />
@@ -164,11 +164,23 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white">
+    <div className="dog-app-shell relative flex flex-col h-full bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white overflow-hidden">
+      {/* Atmosphere layers — only visible under dog-theme via CSS */}
+      <div className="dog-ambiance" aria-hidden>
+        <span className="dog-blob dog-blob-a" />
+        <span className="dog-blob dog-blob-b" />
+        <span className="dog-blob dog-blob-c" />
+        <span className="dog-vignette" />
+        <span className="dog-dust" />
+      </div>
       <TitleBar />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative z-[1] flex flex-1 overflow-hidden min-h-0">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto p-6 pb-24 relative">
+        <main className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative">
+          <div className="dog-corner-pet" aria-hidden>
+            <span className="dog-corner-glow" />
+            <img src="/logo.png" alt="" />
+          </div>
           {children}
         </main>
       </div>

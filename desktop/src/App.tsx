@@ -59,11 +59,12 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement
-    if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    const dogSkin = theme === 'dog-light' || theme === 'dog-dark'
+    const darkTheme = theme === 'dark' || theme === 'dog-dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    root.classList.toggle('dark', darkTheme)
+    root.classList.toggle('dog-theme', dogSkin)
+    root.dataset.theme = theme
   }, [theme])
 
   return (

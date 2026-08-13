@@ -31,7 +31,7 @@ interface SettingsActions {
 export const useSettingsStore = create<SettingsState & SettingsActions>()(
   persist(
     (set) => ({
-      theme: 'light',
+      theme: 'dog-light',
       language: 'zh-CN',
       apiBaseUrl: 'http://139.9.223.233:3000',
       musicQuality: 'exhigh',
