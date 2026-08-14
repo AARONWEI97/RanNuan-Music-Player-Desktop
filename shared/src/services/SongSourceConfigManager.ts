@@ -110,11 +110,11 @@ export const SourceConfigManager = {
 
 /** 可用音源注册表 — 与 /song/url/match 的 source 参数对齐 */
 export const AVAILABLE_SOURCES = [
-  { key: 'bodian', label: '波动',    icon: 'radio' as const,    color: '#ff6600' },
+  { key: 'pyncmd', label: '网易云',  icon: 'cloud' as const,       color: '#ec4141' },
+  { key: 'bodian', label: '波点',    icon: 'radio' as const,    color: '#ff6600' },
   { key: 'qq',     label: 'QQ 音乐', icon: 'music-circle' as const, color: '#12b886' },
   { key: 'migu',   label: '咪咕',    icon: 'music-note' as const,   color: '#ff8c00' },
   { key: 'kugou',  label: '酷狗',    icon: 'music-note' as const,   color: '#2979ff' },
   { key: 'kuwo',   label: '酷我',    icon: 'music-note' as const,   color: '#ffa500' },
-  { key: 'pyncmd', label: '网易云',  icon: 'cloud' as const,       color: '#ec4141' },
   { key: 'gdmusic',label: 'GD 音乐', icon: 'google' as const,      color: '#4285f4' },
 ] as const;

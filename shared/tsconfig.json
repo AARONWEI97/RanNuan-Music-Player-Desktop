@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "paths": {
+      "axios": ["../desktop/node_modules/axios"],
+      "zustand": ["../desktop/node_modules/zustand"],
+      "zustand/middleware": ["../desktop/node_modules/zustand/middleware"]
+    }
+  },
+  "include": ["src"]
+}

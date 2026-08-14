@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { AVAILABLE_SOURCES, usePlayerStore } from '@shared'
 import { reparseWithSource } from '@/services/audioService'
-import { RefreshCw, ChevronDown, Antenna, Music, Disc3, Cloud, Globe, Loader } from 'lucide-react'
+import { RefreshCw, ChevronDown, Antenna, Music, Disc3, Cloud, Globe, Loader, Check } from 'lucide-react'
 
 // map AVAILABLE_SOURCES icon names to lucide components
 const ICON_MAP: Record<string, typeof Antenna> = {
@@ -24,6 +24,9 @@ export default function SourceSelector({ className }: SourceSelectorProps) {
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const isLoading = usePlayerStore(s => s.isLoading)
+  // 优先读独立字段 activeSource；兼容旧会话里挂在歌曲上的 musicSource
+  const currentSource = usePlayerStore(s => s.activeSource || s.playMusic?.musicSource || null)
+  const currentLabel = AVAILABLE_SOURCES.find(s => s.key === currentSource)?.label
 
   const updateMenuPosition = useCallback(() => {
     if (!ref.current) return
@@ -66,7 +69,7 @@ export default function SourceSelector({ className }: SourceSelectorProps) {
       <button
         onClick={() => setShow(!show)}
         className="flex items-center gap-1 p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.06]"
-        title="切换音源"
+        title={currentLabel ? `当前音源：${currentLabel}` : '切换音源'}
       >
         <RefreshCw className={`w-4 h-4 ${isLoading || reparsing ? 'animate-spin text-[#e60026]' : ''}`} />
         <ChevronDown className={`w-2.5 h-2.5 ml-0.5 transition-transform ${show ? 'rotate-180' : ''}`} />
@@ -79,33 +82,51 @@ export default function SourceSelector({ className }: SourceSelectorProps) {
           style={{ left: menuPos.left, top: menuPos.top, transform: 'translateY(-100%)' }}
         >
           <div className="px-3 py-2 border-b border-gray-100 dark:border-white/[0.04]">
-            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">选择音源</span>
+            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+              选择音源
+            </span>
+            {currentLabel ? (
+              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                当前：{currentLabel}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500 truncate">
+                尚未记录音源，播放后自动识别
+              </p>
+            )}
           </div>
           <div className="py-1 max-h-64 overflow-y-auto">
             {AVAILABLE_SOURCES.map(s => {
               const IconComp = ICON_MAP[s.icon] || Music
-              const isActive = reparsing === s.key
+              const isParsing = reparsing === s.key
+              const isCurrent = currentSource === s.key
               return (
                 <button
                   key={s.key}
                   onClick={() => handleSelect(s.key)}
-                  disabled={isActive}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/[0.04] transition-colors disabled:opacity-60"
+                  disabled={isParsing}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors disabled:opacity-60 ${
+                    isCurrent
+                      ? 'bg-[#e60026]/[0.06] text-[#e60026] dark:bg-[#e60026]/[0.12] dark:text-[#ff6b81]'
+                      : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/[0.04]'
+                  }`}
                 >
                   <div
                     className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: `${s.color}18`, color: s.color }}
                   >
-                    {isActive ? (
+                    {isParsing ? (
                       <Loader className="w-3.5 h-3.5 animate-spin" style={{ color: s.color }} />
                     ) : (
                       <IconComp className="w-3.5 h-3.5" />
                     )}
                   </div>
                   <span className="flex-1 text-left truncate">{s.label}</span>
-                  {isActive && (
+                  {isParsing ? (
                     <span className="text-[10px] text-gray-400">解析中</span>
-                  )}
+                  ) : isCurrent ? (
+                    <Check className="w-4 h-4 flex-shrink-0 text-[#e60026]" strokeWidth={2.5} />
+                  ) : null}
                 </button>
               )
             })}

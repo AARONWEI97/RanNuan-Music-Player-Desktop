@@ -36,11 +36,17 @@ function markStrategyFailed(strategyName: string, songId: string | number): void
 // Fallback remote music API — same mechanism as desktop's VITE_API_MUSIC
 const FALLBACK_MUSIC_API = 'https://music-api.gdstudio.xyz';
 
+/** 解析成功结果：url + 实际命中的音源 key（与 AVAILABLE_SOURCES 对齐时可供 UI 勾选） */
+export interface MusicParseResult {
+  url: string;
+  source: string;
+}
+
 interface MusicSourceStrategy {
   name: string;
   priority: number;
   enabled: boolean;
-  parse(id: string | number, songData: SongResult, quality: string): Promise<string | null>;
+  parse(id: string | number, songData: SongResult, quality: string): Promise<MusicParseResult | null>;
 }
 
 class OfficialApiStrategy implements MusicSourceStrategy {
@@ -50,7 +56,7 @@ class OfficialApiStrategy implements MusicSourceStrategy {
   // 每首歌省掉一次注定返回试听 URL 的 HTTP 请求
   enabled = false;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, quality: string): Promise<MusicParseResult | null> {
     try {
       const token = await getStorageAdapter().getItem(TOKEN_KEY);
       const cookieWithOs = token && !token.startsWith('uid:') ? `${token} os=pc;` : undefined;
@@ -67,7 +73,7 @@ class OfficialApiStrategy implements MusicSourceStrategy {
       const isTrial = !!res?.data?.data?.[0]?.freeTrialInfo;
       if (url && !isTrial) {
         console.log(`[MusicParser] Official API returned full URL for "${songData.name}"`);
-        return url;
+        return { url, source: 'pyncmd' };
       }
       if (isTrial) {
         console.log(`[MusicParser] Official API returned trial URL for "${songData.name}", skipping`);
@@ -87,7 +93,7 @@ class CustomApiStrategy implements MusicSourceStrategy {
   // 未配置自定义 API，暂时禁用
   enabled = false;
 
-  async parse(id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, _quality: string): Promise<MusicParseResult | null> {
     try {
       const customApiUrl = await getStorageAdapter().getItem('custom_api_url');
       if (!customApiUrl) {
@@ -104,7 +110,7 @@ class CustomApiStrategy implements MusicSourceStrategy {
       const url = data?.url || data?.data?.url || (Array.isArray(data?.data) && data.data[0]?.url);
       if (url) {
         console.log(`[MusicParser] Custom API found URL for "${songData.name}"`);
-        return url;
+        return { url, source: 'custom' };
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -121,18 +127,18 @@ class CustomApiStrategy implements MusicSourceStrategy {
  *
  * ★ API 文档支持 source 参数：/song/url/match?id=xxx&source=migu
  * 不指定 source 时由服务端自动选择，但可能选不到最优源
- * 依次尝试 migu → kugou → kuwo → 不指定（与桌面端 ALL_PLATFORMS 对齐）
+ * 默认优先网易云，其次波点，其余平台作为后备。
  */
 class UnblockApiMatchStrategy implements MusicSourceStrategy {
   name = 'unblockMatch';
   priority = 2;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, _quality: string): Promise<MusicParseResult | null> {
     // ★ 与服务器 unblock_test.html 支持的音源对齐
     // 服务器实际支持的 source: bodian, qq, migu, kugou, kuwo, pyncmd
-    // bodian 实测有效，放第一位；不指定 source 的情况放最后作为兜底
-    const sources = ['bodian', 'qq', 'migu', 'kugou', 'kuwo', 'pyncmd', undefined];
+    // 不指定 source 的情况放最后，交给服务端做最终兜底
+    const sources = ['pyncmd', 'bodian', 'qq', 'migu', 'kugou', 'kuwo', undefined];
 
     for (const source of sources) {
       try {
@@ -144,8 +150,9 @@ class UnblockApiMatchStrategy implements MusicSourceStrategy {
         // ★★★ 修复：/song/url/match 返回的是对象 data.url，不是数组 data[0].url ★★★
         const url = res?.data?.data?.url;
         if (url) {
+          const resolved = source || 'bodian';
           console.log(`[MusicParser] UnblockApiMatch (${source || 'auto'}) found URL for "${songData.name}"`);
-          return url;
+          return { url, source: resolved };
         }
         if (source) {
           console.log(`[MusicParser] UnblockApiMatch (${source}): no URL for "${songData.name}"`);
@@ -165,14 +172,14 @@ class UnblockApiMatchStrategy implements MusicSourceStrategy {
     songData: SongResult,
     _quality: string,
     forcedSource: string,
-  ): Promise<string | null> {
+  ): Promise<MusicParseResult | null> {
     try {
       const params: Record<string, any> = { id, source: forcedSource };
       const res = await request.get('/song/url/match', { params });
       const url = res?.data?.data?.url;
       if (url) {
         console.log(`[MusicParser] UnblockApiMatch (${forcedSource}) found URL for "${songData.name}"`);
-        return url;
+        return { url, source: forcedSource };
       }
     } catch (e) {
       console.warn(`[MusicParser] UnblockApiMatch (${forcedSource}) error:`, e instanceof Error ? e.message : String(e));
@@ -197,7 +204,7 @@ class GDMusicStrategy implements MusicSourceStrategy {
   priority = 3;
   enabled = true;
 
-  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
+  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<MusicParseResult | null> {
     try {
       const songName = songData.name || '';
       let artistNames = '';
@@ -250,7 +257,7 @@ class GDMusicStrategy implements MusicSourceStrategy {
 
           if (urlRes.data && urlRes.data.url) {
             console.log(`[MusicParser] GDMusic (${trackSource}) found URL for "${songData.name}"`);
-            return urlRes.data.url;
+            return { url: urlRes.data.url, source: 'gdmusic' };
           } else {
             console.log(`[MusicParser] GDMusic (${trackSource}): no URL in response`);
           }
@@ -272,7 +279,7 @@ class LxMusicStrategy implements MusicSourceStrategy {
   priority = 4;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, quality: string): Promise<MusicParseResult | null> {
     try {
       const songName = songData.name;
       const artistName = songData.ar?.map((a) => a.name).join(' ') || '';
@@ -327,7 +334,7 @@ class LxMusicStrategy implements MusicSourceStrategy {
       const url = urlRes.data?.data?.url || urlRes.data?.url;
       if (url) {
         console.log(`[MusicParser] LxMusic found URL for "${songData.name}"`);
-        return url;
+        return { url, source: 'lxMusic' };
       }
     } catch (e) {
       console.warn(`[MusicParser] LxMusic error:`, e instanceof Error ? e.message : String(e));
@@ -341,7 +348,7 @@ class UnblockMusicServiceStrategy implements MusicSourceStrategy {
   priority = 5;
   enabled = true;
 
-  async parse(id: string | number, songData: SongResult, quality: string): Promise<string | null> {
+  async parse(id: string | number, songData: SongResult, quality: string): Promise<MusicParseResult | null> {
     try {
       const unblockUrl = await getStorageAdapter().getItem('unblock_service_url');
       if (!unblockUrl) return null;
@@ -354,7 +361,7 @@ class UnblockMusicServiceStrategy implements MusicSourceStrategy {
       const url = res.data?.data?.url || res.data?.url;
       if (url) {
         console.log(`[MusicParser] Unblock service found URL for "${songData.name}"`);
-        return url;
+        return { url, source: 'unblock' };
       }
     } catch (e) {
       console.warn(`[MusicParser] Unblock service error:`, e instanceof Error ? e.message : String(e));
@@ -375,7 +382,7 @@ class FallbackApiStrategy implements MusicSourceStrategy {
   priority = 6;
   enabled = true;
 
-  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<string | null> {
+  async parse(_id: string | number, songData: SongResult, _quality: string): Promise<MusicParseResult | null> {
     try {
       const songName = songData.name || '';
       let artistNames = '';
@@ -407,7 +414,7 @@ class FallbackApiStrategy implements MusicSourceStrategy {
 
       if (urlRes.data && urlRes.data.url) {
         console.log(`[MusicParser] Fallback API found URL for "${songData.name}"`);
-        return urlRes.data.url;
+        return { url: urlRes.data.url, source: 'gdmusic' };
       }
     } catch (e) {
       console.warn(`[MusicParser] Fallback API error:`, e instanceof Error ? e.message : String(e));
@@ -436,11 +443,17 @@ export class MusicParser {
     songData: SongResult,
     quality: string = 'exhigh',
     skipOfficial: boolean = false
-  ): Promise<string | null> {
-    const cachedUrl = await this.getCachedUrl(id);
-    if (cachedUrl) {
-      console.log(`[MusicParser] Using cached URL for "${songData.name}"`);
-      return cachedUrl;
+  ): Promise<MusicParseResult | null> {
+    const cached = await this.getCachedUrl(id);
+    if (cached?.url) {
+      // 旧缓存没有 source 时清掉重解析，否则音源选择器永远无法打勾
+      if (cached.source) {
+        songData.musicSource = cached.source;
+        console.log(`[MusicParser] Using cached URL for "${songData.name}" (source=${cached.source})`);
+        return { url: cached.url, source: cached.source };
+      }
+      console.log(`[MusicParser] Cached URL missing source for "${songData.name}", re-parsing`);
+      await this.invalidateCache(id);
     }
 
     for (const strategy of this.strategies) {
@@ -453,12 +466,11 @@ export class MusicParser {
       }
 
       try {
-        const url = await strategy.parse(id, songData, quality);
-        if (url) {
-          // ★ OfficialApiStrategy 返回试听 URL 时也会返回 url（但不应该缓存为完整）
-          // 策略本身已经过滤了试听 URL（isTrial → return null），所以这里缓存的都是完整 URL
-          await this.cacheUrl(id, url, false);
-          return url;
+        const result = await strategy.parse(id, songData, quality);
+        if (result) {
+          songData.musicSource = result.source;
+          await this.cacheUrl(id, result.url, false, undefined, result.source);
+          return result;
         }
       } catch (e) {
         console.warn(`[MusicParser] Strategy "${strategy.name}" threw:`, e);
@@ -471,11 +483,11 @@ export class MusicParser {
     return null;
   }
 
-  async getCachedUrl(id: string | number, skipTrial: boolean = true): Promise<string | null> {
+  async getCachedUrl(id: string | number, skipTrial: boolean = true): Promise<{ url: string; source?: string } | null> {
     try {
       const cached = await getStorageAdapter().getItem(`${URL_CACHE_PREFIX}${id}`);
       if (!cached) return null;
-      const { url, timestamp, isTrial, expiry } = JSON.parse(cached);
+      const { url, timestamp, isTrial, expiry, source } = JSON.parse(cached);
       const cacheExpiry = expiry || URL_CACHE_EXPIRY;
       if (Date.now() - timestamp > cacheExpiry) {
         await getStorageAdapter().removeItem(`${URL_CACHE_PREFIX}${id}`);
@@ -486,17 +498,17 @@ export class MusicParser {
         console.log(`[MusicParser] Cached URL is trial, skipping`);
         return null;
       }
-      return url;
+      return { url, source };
     } catch {
       return null;
     }
   }
 
-  async cacheUrl(id: string | number, url: string, isTrial: boolean = false, expiry?: number): Promise<void> {
+  async cacheUrl(id: string | number, url: string, isTrial: boolean = false, expiry?: number, source?: string): Promise<void> {
     try {
       await getStorageAdapter().setItem(
         `${URL_CACHE_PREFIX}${id}`,
-        JSON.stringify({ url, timestamp: Date.now(), isTrial, expiry })
+        JSON.stringify({ url, timestamp: Date.now(), isTrial, expiry, source })
       );
     } catch {}
   }
@@ -544,7 +556,7 @@ export class MusicParser {
     songData: SongResult,
     quality: string,
     forcedSource: string,
-  ): Promise<string | null> {
+  ): Promise<MusicParseResult | null> {
     // 1. 清除缓存
     await this.invalidateCache(id);
     // 2. 清除失败标记
@@ -572,16 +584,18 @@ export class MusicParser {
     try {
       // 对 unblock 源，直接调用 parseWithSource
       if (entry.extraParam) {
-        const url = await (entry.strategy as UnblockApiMatchStrategy).parseWithSource(id, songData, quality, entry.extraParam);
-        if (url) {
-          await this.cacheUrl(id, url, false, URL_CACHE_EXPIRY_MANUAL);
-          return url;
+        const result = await (entry.strategy as UnblockApiMatchStrategy).parseWithSource(id, songData, quality, entry.extraParam);
+        if (result) {
+          songData.musicSource = result.source;
+          await this.cacheUrl(id, result.url, false, URL_CACHE_EXPIRY_MANUAL, result.source);
+          return result;
         }
       } else {
-        const url = await entry.strategy.parse(id, songData, quality);
-        if (url) {
-          await this.cacheUrl(id, url, false, URL_CACHE_EXPIRY_MANUAL);
-          return url;
+        const result = await entry.strategy.parse(id, songData, quality);
+        if (result) {
+          songData.musicSource = result.source;
+          await this.cacheUrl(id, result.url, false, URL_CACHE_EXPIRY_MANUAL, result.source);
+          return result;
         }
       }
     } catch (e) {
@@ -614,6 +628,6 @@ export async function parseMusicUrl(
   songData: SongResult,
   quality: string = 'exhigh',
   skipOfficial: boolean = false
-): Promise<string | null> {
+): Promise<MusicParseResult | null> {
   return musicParser.parseMusic(id, songData, quality, skipOfficial);
 }

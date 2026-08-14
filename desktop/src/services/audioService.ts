@@ -3,6 +3,33 @@ import { recordSuccessfulPlay } from '@/store/historyStore';
 import { showToast } from '@/utils/toast';
 import { saveSession } from './sessionManager';
 
+const KNOWN_SOURCE_KEYS = new Set<string>(AVAILABLE_SOURCES.map((s) => s.key));
+
+function applyActiveSource(song: SongResult, source?: string | null) {
+  const player = usePlayerStore.getState();
+  if (source && KNOWN_SOURCE_KEYS.has(source)) {
+    song.musicSource = source;
+    player.setActiveSource(source);
+    return;
+  }
+  if (song.musicSource && KNOWN_SOURCE_KEYS.has(song.musicSource)) {
+    player.setActiveSource(song.musicSource);
+    return;
+  }
+  player.setActiveSource(null);
+}
+
+function isLocalPlayback(song: SongResult, url?: string) {
+  if (String(song.id).startsWith('local-')) return true
+  return !!url && (
+    url.startsWith('blob:')
+    || url.startsWith('data:')
+    || url.startsWith('local://')
+    || url.startsWith('asset:')
+    || url.startsWith('http://asset.localhost/')
+    || url.startsWith('https://asset.localhost/')
+  )
+}
 // ═══════════════ 托盘 tooltip 更新 ═══════════════
 let updateTrayTooltipFn: ((text: string) => void) | null = null;
 
@@ -32,47 +59,110 @@ async function notifyTray(song: import('@shared').SongResult | null) {
 
 // ==================== Audio Singleton ====================
 let audio: HTMLAudioElement | null = null;
+let audioListenersController: AbortController | null = null;
 let progressInterval: number | null = null;
+let moduleDisposed = false;
 
 // ★ Generation counter — prevents race conditions from rapid song switching
 // Inspired by AlgerMusicPlayer's playbackController generation pattern
 let playGeneration = 0;
 
 // ★ Preload cache for next song (seamless transitions)
-let preloadedNext: { songId: number; url: string } | null = null;
+let preloadedNext: { songId: string | number; url: string; source?: string } | null = null;
 
 // P0-5: 操作锁 — 防止并发 play/stop/seek 冲突
-let isOperating = false;
+let operationOwner: number | null = null;
+let operationSequence = 0;
 let operationTimer: ReturnType<typeof setTimeout> | null = null;
 
-function acquireOperationLock(): boolean {
-  if (isOperating) return false;
-  isOperating = true;
+function acquireOperationLock(): number | null {
+  if (operationOwner !== null) return null;
+  const owner = ++operationSequence;
+  operationOwner = owner;
   if (operationTimer) clearTimeout(operationTimer);
-  operationTimer = setTimeout(() => { isOperating = false; }, 500);
-  return true;
+  operationTimer = setTimeout(() => {
+    if (operationOwner === owner) operationOwner = null;
+    operationTimer = null;
+  }, 500);
+  return owner;
 }
 
-function releaseOperationLock() {
-  isOperating = false;
+function releaseOperationLock(owner?: number) {
+  if (owner !== undefined && operationOwner !== owner) return;
+  operationOwner = null;
   if (operationTimer) { clearTimeout(operationTimer); operationTimer = null; }
 }
 
-// P1-9: 重试定时器
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
+function destroyAudioElement(target: HTMLAudioElement) {
+  if (target === audio) {
+    audioListenersController?.abort()
+    audioListenersController = null
+    audio = null
+  }
+  try {
+    target.pause()
+    target.removeAttribute('src')
+    target.load()
+  } catch { /* ignore */ }
+}
 
-function cancelRetryTimer() {
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+/** 解绑监听后再释放实例，主动清 src 产生的事件不会污染下一首歌。 */
+function disposeAudioInstance() {
+  stopProgressSync()
+  if (!audio) return
+  destroyAudioElement(audio)
+}
+
+function invalidatePlayback() {
+  playGeneration += 1
+  preloadedNext = null
+}
+
+function isCurrentGeneration(generation: number) {
+  return !moduleDisposed && generation === playGeneration
+}
+
+function cleanupStaleAudio(target: HTMLAudioElement) {
+  // 用户在缓冲阶段主动暂停时保留当前 src；切歌、停止和 HMR 的旧实例则彻底释放。
+  if (target !== audio || !target.paused) destroyAudioElement(target)
+}
+
+/** 解析/播放失败：停在当前曲并暂停，绝不自动下一首连环解析 */
+function stopOnPlaybackFailure(title: string, detail = '请手动切换音源或下一首') {
+  invalidatePlayback()
+  const player = usePlayerStore.getState()
+  disposeAudioInstance()
+  player.setIsPlay(false)
+  player.setIsLoading(false)
+  updateMediaSessionPlaybackState(false)
+  usePlaylistStore.getState().resetFailCount()
+  showToast(title, detail)
 }
 
 function getAudio(): HTMLAudioElement {
+  if (moduleDisposed) throw new Error('Audio service has been disposed')
   if (!audio) {
     audio = new Audio();
     audio.preload = 'auto';
-    setupAudioListeners();
+    setupAudioListeners(audio);
     initMediaSession();
   }
   return audio;
+}
+
+// Vite HMR 会丢掉模块级 audio 引用，旧实例却继续出声 → 进度条假跑 / 叠音
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    moduleDisposed = true
+    invalidatePlayback()
+    releaseOperationLock()
+    disposeAudioInstance()
+    const player = usePlayerStore.getState()
+    player.setIsPlay(false)
+    player.setIsLoading(false)
+    updateMediaSessionPlaybackState(false)
+    clearMediaSessionHandlers()
+  })
 }
 
 // ==================== Progress Sync ====================
@@ -95,28 +185,50 @@ function stopProgressSync() {
 
 // ==================== MediaSession (system tray / lock screen controls) ====================
 
+const MEDIA_SESSION_ACTIONS: MediaSessionAction[] = [
+  'play', 'pause', 'previoustrack', 'nexttrack', 'seekto',
+]
+
+function clearMediaSessionHandlers() {
+  if (!('mediaSession' in navigator)) return
+  for (const action of MEDIA_SESSION_ACTIONS) {
+    try { navigator.mediaSession.setActionHandler(action, null) } catch { /* unsupported action */ }
+  }
+}
+
 function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
 
   navigator.mediaSession.setActionHandler('play', () => {
-    getAudio().play();
+    if (moduleDisposed) return
+    const song = usePlayerStore.getState().playMusic || usePlaylistStore.getState().getCurrentSong()
+    if (!audio?.currentSrc) {
+      if (song) void playSong(song)
+      return
+    }
+    void audio.play().catch((error) => {
+      console.warn('[Audio] MediaSession play failed:', error)
+    })
   });
   navigator.mediaSession.setActionHandler('pause', () => {
-    getAudio().pause();
+    if (!moduleDisposed) audio?.pause();
   });
   navigator.mediaSession.setActionHandler('previoustrack', () => {
+    if (moduleDisposed) return
     const { prevPlay, getCurrentSong } = usePlaylistStore.getState();
     prevPlay();
     const song = getCurrentSong();
     if (song) playSong(song);
   });
   navigator.mediaSession.setActionHandler('nexttrack', () => {
+    if (moduleDisposed) return
     const { nextPlay, getCurrentSong } = usePlaylistStore.getState();
     nextPlay();
     const song = getCurrentSong();
     if (song) playSong(song);
   });
   navigator.mediaSession.setActionHandler('seekto', (details) => {
+    if (moduleDisposed) return
     if (details.seekTime !== undefined) {
       seekTo(details.seekTime * 1000);
     }
@@ -167,17 +279,24 @@ function updateMediaSessionPositionState() {
 
 // ==================== Audio Event Listeners ====================
 
-function setupAudioListeners() {
-  if (!audio) return;
+function setupAudioListeners(target: HTMLAudioElement) {
+  audioListenersController?.abort()
+  const controller = new AbortController()
+  audioListenersController = controller
+  const options = { signal: controller.signal }
+  const isCurrent = () => !moduleDisposed && audio === target
 
-  audio.addEventListener('ended', () => {
+  target.addEventListener('ended', () => {
+    if (!isCurrent()) return
     updateMediaSessionPlaybackState(false);
     const playlist = usePlaylistStore.getState();
 
     // 1. Single loop mode
     if (playlist.playMode === 1) {
-      audio!.currentTime = 0;
-      audio!.play();
+      target.currentTime = 0;
+      void target.play().catch((error) => {
+        console.warn('[Audio] Single-loop replay failed:', error)
+      });
       return;
     }
 
@@ -195,152 +314,104 @@ function setupAudioListeners() {
     playlist.nextPlay(true);
     const song = usePlaylistStore.getState().getCurrentSong();
     if (song) playSong(song);
-  });
+  }, options);
 
-  audio.addEventListener('timeupdate', () => {
-    if (audio) {
-      usePlayerStore.getState().setCurrentProgress(audio.currentTime * 1000);
+  target.addEventListener('timeupdate', () => {
+    // 仅在实际播放时同步进度，避免暂停后仍被残留事件推进进度条
+    if (isCurrent() && !target.paused) {
+      usePlayerStore.getState().setCurrentProgress(target.currentTime * 1000);
     }
-  });
+  }, options);
 
-  audio.addEventListener('loadedmetadata', () => {
-    if (audio) {
-      usePlayerStore.getState().setDuration(audio.duration * 1000);
+  target.addEventListener('loadedmetadata', () => {
+    if (isCurrent()) {
+      usePlayerStore.getState().setDuration(target.duration * 1000);
       updateMediaSessionPositionState();
     }
-  });
+  }, options);
 
-  audio.addEventListener('play', () => {
+  target.addEventListener('play', () => {
+    if (!isCurrent()) return
     usePlayerStore.getState().setIsPlay(true);
     updateMediaSessionPlaybackState(true);
     startProgressSync();
-  });
+  }, options);
 
-  audio.addEventListener('pause', () => {
+  target.addEventListener('pause', () => {
+    if (!isCurrent()) return
     usePlayerStore.getState().setIsPlay(false);
     updateMediaSessionPlaybackState(false);
     stopProgressSync();
-  });
+  }, options);
 
-  audio.addEventListener('seeked', () => {
-    updateMediaSessionPositionState();
-  });
+  target.addEventListener('seeked', () => {
+    if (isCurrent()) updateMediaSessionPositionState();
+  }, options);
 
-  audio.addEventListener('error', async () => {
-    const errCode = audio?.error?.code
-    if (errCode !== 4) console.error('Audio error:', errCode, audio?.error?.message)
+  target.addEventListener('error', () => {
+    if (!isCurrent()) return
+    const errCode = target.error?.code
+    if (errCode !== 4) console.error('Audio error:', errCode, target.error?.message)
     usePlayerStore.getState().setIsLoading(false)
     updateMediaSessionPlaybackState(false)
 
-    const currentSong = usePlaylistStore.getState().getCurrentSong()
-    if (!currentSong) return
-
-    // ★ 音源降级链：netease → kugou → kuwo → migu → bodian
-    const FALLBACK_ORDER = ['kugou', 'kuwo', 'migu', 'bodian']
-    const tried = (currentSong._audioFailedSources as string[] | undefined) || []
-    tried.push((currentSong.source as string) || 'netease')
-    currentSong._audioFailedSources = tried
-
-    const nextSource = FALLBACK_ORDER.find(s => !tried.includes(s))
-    if (nextSource) {
-      try {
-        const quality = useSettingsStore.getState().musicQuality || 'exhigh'
-        const url = await musicParser.parseMusicWithSource(currentSong.id, currentSong, quality, nextSource)
-        if (url) {
-          console.log(`[Audio] 🔄 切换到 ${nextSource}: ${currentSong.name}`)
-          ;(currentSong.source as string | undefined) = nextSource
-          currentSong.playMusicUrl = url
-          currentSong.expiredAt = Date.now() + 24 * 60 * 60 * 1000
-          usePlayerStore.setState({ playMusicUrl: url })
-          const a = getAudio()
-          a.src = url
-          a.volume = usePlayerStore.getState().isMuted ? 0 : usePlayerStore.getState().volume
-          a.playbackRate = usePlayerStore.getState().playbackRate
-          await a.play()
-          usePlayerStore.getState().setIsPlay(true)
-          usePlaylistStore.getState().resetFailCount()
-          preloadNextSong()
-          return
-        }
-      } catch {
-        // 当前音源切换失败，继续走下方切歌逻辑
-      }
-      // 当前源失败 → 延迟后重试下一个（避免循环触发 error）
-      setTimeout(() => {
-        const song = usePlaylistStore.getState().getCurrentSong()
-        if (song?.id === currentSong.id && song.playMusicUrl !== currentSong.playMusicUrl) {
-          // 已经换过 URL 了，让 playSong 处理
-          playSong(song)
-        }
-      }, 300)
-      return
-    }
-
-    // 所有音源都失败 → 切下一首
-    delete currentSong._audioFailedSources
-    const failCount = usePlaylistStore.getState().incrementFailCount()
-    if (failCount >= 5) {
-      showToast('连续播放失败，已停止')
-      usePlayerStore.getState().setIsPlay(false)
-      usePlaylistStore.getState().resetFailCount()
-    } else {
-      usePlaylistStore.getState().nextPlay()
-      const nextSong = usePlaylistStore.getState().getCurrentSong()
-      if (nextSong && nextSong.id !== currentSong.id) {
-        playSong(nextSong)
-      }
-    }
-  });
+    const currentSong = usePlayerStore.getState().playMusic || usePlaylistStore.getState().getCurrentSong()
+    // 解析/播放失败后停在当前曲，不再自动换源、自动下一首，避免无限解析循环。
+    // 用户可手动切歌或用音源选择器重试。
+    stopOnPlaybackFailure(
+      currentSong?.name ? `「${currentSong.name}」播放失败` : '播放失败',
+      '请手动切换音源或下一首',
+    )
+  }, options);
 }
 
 // ==================== Core: playSong with generation-based cancellation ====================
 
-export async function playSong(song: SongResult, retryCount = 0, autoPlay = true) {
-  // P0-5: 操作锁（autoPlay=false 时不抢占锁，允许后续正常播放）
-  if (autoPlay && !acquireOperationLock()) {
-    console.log('[Audio] Operation locked, ignoring playSong');
-    return;
-  }
+export async function playSong(song: SongResult, autoPlay = true) {
+  if (moduleDisposed) return
 
   const player = usePlayerStore.getState();
   const musicQuality = useSettingsStore.getState().musicQuality || 'exhigh';
 
   // ★ Increment generation — any in-flight playSong with older generation will abort
   const thisGeneration = ++playGeneration;
-  cancelRetryTimer(); // P1-9: 取消之前的重试
 
   // 切歌时先停掉当前音频，避免旧歌继续播放到新 URL 解析完成
   if (autoPlay) {
-    const a = getAudio();
-    if (!a.paused || a.src) {
-      a.pause();
-      a.removeAttribute('src');
-      a.load();
-    }
+    disposeAudioInstance()
+    usePlayerStore.getState().setIsPlay(false);
     updateMediaSessionPlaybackState(false);
   }
 
   player.setIsLoading(true);
   player.setPlayMusic(song);
+  let operationAudio: HTMLAudioElement | null = null
 
   try {
     // ★ Check preload cache first (seamless transitions)
     if (preloadedNext && preloadedNext.songId == song.id) {
       console.log(`[Audio] ⚡ Hit preload cache for "${song.name}"`);
       const url = preloadedNext.url;
+      applyActiveSource(song, preloadedNext.source);
       preloadedNext = null;
 
-      if (thisGeneration !== playGeneration) { releaseOperationLock(); return; }
+      if (!isCurrentGeneration(thisGeneration)) return;
 
       player.setIsLoading(false);
+      player.setPlayMusic({ ...song });
       player.setPlayMusicUrl(url);
       const a = getAudio();
+      operationAudio = a
       a.src = url;
       a.volume = player.isMuted ? 0 : player.volume;
       a.playbackRate = player.playbackRate;
 
       if (autoPlay) {
         await a.play();
+        if (!isCurrentGeneration(thisGeneration)) {
+          cleanupStaleAudio(a)
+          return
+        }
         player.setIsPlay(true);
         recordSuccessfulPlay(song);
       } else {
@@ -354,7 +425,6 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
       notifyTray(song); // ★ 更新托盘 tooltip
       preloadNextSong();
       preloadLyric(song); // P1-10: 预加载歌词
-      if (autoPlay) { releaseOperationLock(); }
       return;
     }
     preloadedNext = null;
@@ -368,22 +438,38 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
       }
     }
 
-    // Resolve URL
+    // Resolve URL + 音源：已有 URL 但缺少 musicSource 时也重新解析，保证勾选能显示
     let url = song.playMusicUrl;
-    if (!url) {
-      url = (await parseMusicUrl(song.id, song, musicQuality)) ?? undefined
+    const localPlayback = isLocalPlayback(song, url)
+    const hasKnownSource = !!(song.musicSource && KNOWN_SOURCE_KEYS.has(song.musicSource));
+    if (!url || (!localPlayback && !hasKnownSource)) {
+      const parsed = await parseMusicUrl(song.id, song, musicQuality);
+      if (parsed) {
+        url = parsed.url;
+        applyActiveSource(song, parsed.source);
+      } else if (url) {
+        // 解析失败但旧 URL 仍可用，至少清空无效勾选状态
+        applyActiveSource(song, song.musicSource);
+      }
+    } else if (localPlayback) {
+      player.setActiveSource(null)
+    } else {
+      applyActiveSource(song, song.musicSource);
     }
 
     // ★ Check generation after async operation
-    if (thisGeneration !== playGeneration) {
+    if (!isCurrentGeneration(thisGeneration)) {
       console.log(`[Audio] gen=${thisGeneration} stale after URL resolve, aborting`);
-      releaseOperationLock();
       return;
     }
 
     if (url) {
+      song.playMusicUrl = url;
+      // 同步解析命中的音源到 player store，供音源选择器打勾
+      player.setPlayMusic({ ...song });
       player.setPlayMusicUrl(url);
       const a = getAudio();
+      operationAudio = a
       a.src = url;
       a.volume = player.isMuted ? 0 : player.volume;
       a.playbackRate = player.playbackRate;
@@ -392,11 +478,9 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
         await a.play();
 
         // ★ Check generation after play() — user may have clicked another song during buffering
-        if (thisGeneration !== playGeneration) {
+        if (!isCurrentGeneration(thisGeneration)) {
           console.log(`[Audio] gen=${thisGeneration} stale after play(), stopping`);
-          a.pause();
-          a.removeAttribute('src');
-          releaseOperationLock();
+          cleanupStaleAudio(a)
           return;
         }
       }
@@ -412,67 +496,33 @@ export async function playSong(song: SongResult, retryCount = 0, autoPlay = true
       preloadLyric(song); // P1-10: 预加载歌词
     } else {
       console.warn('No playable URL found for', song.name);
-      showToast('无法播放', '该歌曲暂无可用音源');
-      if (thisGeneration === playGeneration) {
-        // P1-9: 重试机制 — 首次失败 1s 后重试一次
-        if (retryCount < 1) {
-          retryTimer = setTimeout(() => {
-            if (playGeneration !== thisGeneration) return;
-            console.log(`[Audio] 重试播放: ${song.name}`);
-            playSong(song, retryCount + 1, autoPlay);
-          }, 1000);
-        } else {
-          // 重试仍失败，跳到下一首
-          const failCount = usePlaylistStore.getState().incrementFailCount();
-          if (failCount >= 5) {
-            showToast('连续播放失败', '已停止播放');
-            usePlayerStore.getState().setIsPlay(false);
-            usePlaylistStore.getState().resetFailCount();
-          } else {
-            setTimeout(() => {
-              if (playGeneration !== thisGeneration) return;
-              const playlist = usePlaylistStore.getState();
-              playlist.nextPlay();
-              const nextSong = playlist.getCurrentSong();
-              if (nextSong && nextSong.id !== song.id) playSong(nextSong);
-            }, 1000);
-          }
-        }
+      if (isCurrentGeneration(thisGeneration)) {
+        // 清掉失效缓存，避免下次手动播放仍命中坏 URL
+        song.playMusicUrl = undefined
+        song['expiredAt'] = undefined
+        stopOnPlaybackFailure(
+          `「${song.name}」解析失败`,
+          '音源接口异常或备用线路不可用，请换网络/音源或检查 API',
+        )
       }
     }
   } catch (e) {
     console.error('Play error:', e);
-    if (thisGeneration !== playGeneration) { releaseOperationLock(); return; }
-
-    showToast('播放失败', '网络或音源错误');
-    // P1-9: 重试机制
-    if (retryCount < 1) {
-      retryTimer = setTimeout(() => {
-        if (playGeneration !== thisGeneration) return;
-        console.log(`[Audio] 重试播放: ${song.name}`);
-        playSong(song, retryCount + 1, autoPlay);
-      }, 1000);
-    } else {
-      const failCount = usePlaylistStore.getState().incrementFailCount();
-      if (failCount >= 5) {
-        showToast('连续播放失败', '已停止播放');
-        usePlayerStore.getState().setIsPlay(false);
-        usePlaylistStore.getState().resetFailCount();
-      } else {
-        setTimeout(() => {
-          if (playGeneration !== thisGeneration) return;
-          const playlist = usePlaylistStore.getState();
-          playlist.nextPlay();
-          const nextSong = playlist.getCurrentSong();
-          if (nextSong && nextSong.id !== song.id) playSong(nextSong);
-        }, 1000);
-      }
+    if (!isCurrentGeneration(thisGeneration)) {
+      if (operationAudio) cleanupStaleAudio(operationAudio)
+      return
     }
+
+    song.playMusicUrl = undefined
+    song['expiredAt'] = undefined
+    stopOnPlaybackFailure(
+      `「${song.name}」播放失败`,
+      '请手动切换音源或下一首',
+    )
   } finally {
-    if (thisGeneration === playGeneration) {
+    if (isCurrentGeneration(thisGeneration)) {
       player.setIsLoading(false);
     }
-    releaseOperationLock();
   }
 }
 
@@ -523,11 +573,19 @@ function preloadNextSong() {
     const nextSong = playList[nextIndex];
     if (!nextSong || nextSong.id === playlist.getCurrentSong()?.id) return;
 
+    if (nextSong.playMusicUrl && isLocalPlayback(nextSong, nextSong.playMusicUrl)) {
+      preloadedNext = { songId: nextSong.id, url: nextSong.playMusicUrl }
+      return
+    }
+
     const musicQuality = useSettingsStore.getState().musicQuality || 'exhigh';
-    parseMusicUrl(nextSong.id, nextSong, musicQuality).then((url) => {
-      if (url) {
-        preloadedNext = { songId: Number(nextSong.id), url };
-        console.log(`[Audio] Preloaded next song: "${nextSong.name}"`);
+    const preloadGeneration = playGeneration
+    parseMusicUrl(nextSong.id, nextSong, musicQuality).then((result) => {
+      if (result && isCurrentGeneration(preloadGeneration)) {
+        nextSong.playMusicUrl = result.url;
+        nextSong.musicSource = result.source;
+        preloadedNext = { songId: nextSong.id, url: result.url, source: result.source };
+        console.log(`[Audio] Preloaded next song: "${nextSong.name}" (source=${result.source})`);
       }
     }).catch(() => {/* preload failure is non-critical */});
   } catch {/* preload error is non-critical */}
@@ -536,30 +594,40 @@ function preloadNextSong() {
 // ==================== Playback Controls ====================
 
 export function togglePlay() {
-  if (!acquireOperationLock()) return; // P0-5
+  if (moduleDisposed) return
+  const operationId = acquireOperationLock()
+  if (operationId === null) return; // P0-5
   const a = getAudio();
   const player = usePlayerStore.getState();
   const song = player.playMusic || usePlaylistStore.getState().getCurrentSong();
 
-  if (!a.paused) {
-    a.pause();
+  // 以真实 audio 状态为准：UI 显示暂停但实例仍在播时，先停干净，避免再点播放叠音
+  if (!a.paused || player.isPlay) {
+    if (player.isLoading) {
+      invalidatePlayback()
+      player.setIsLoading(false)
+    }
+    if (!a.paused) a.pause();
+    player.setIsPlay(false);
     notifyTray(null);
-    releaseOperationLock();
+    releaseOperationLock(operationId);
     return;
   }
 
   // 启动恢复、浏览器重建 Audio 实例或上次 URL 失效时，audio.src 可能为空。
   // 直接调用 audio.play() 不会触发 URL 解析，必须复用完整的 playSong 流程。
   if (!song || !a.currentSrc) {
-    releaseOperationLock();
+    releaseOperationLock(operationId);
     if (song) void playSong(song);
     return;
   }
 
+  const resumeGeneration = playGeneration
   const playPromise = a.play();
   // 远程地址过期时，先清掉旧缓存再重新解析当前歌曲。
   playPromise?.catch((error: unknown) => {
     console.warn('[Audio] Resumed playback failed, resolving a fresh URL:', error);
+    if (!isCurrentGeneration(resumeGeneration) || audio !== a) return;
     if (usePlayerStore.getState().playMusic?.id !== song.id) return;
     song.playMusicUrl = undefined;
     song['expiredAt'] = undefined;
@@ -567,46 +635,44 @@ export function togglePlay() {
     void playSong(song);
   });
   // 恢复播放是异步的，不能持有同步操作锁等待 Promise。
-  releaseOperationLock();
+  releaseOperationLock(operationId);
   notifyTray(song);
 }
 
 export function seekTo(ms: number) {
-  if (!acquireOperationLock()) return; // P0-5
+  if (moduleDisposed) return
+  const operationId = acquireOperationLock()
+  if (operationId === null) return; // P0-5
   try {
     const a = getAudio();
     a.currentTime = ms / 1000;
     usePlayerStore.getState().setCurrentProgress(ms);
     updateMediaSessionPositionState();
   } finally {
-    releaseOperationLock();
+    releaseOperationLock(operationId);
   }
 }
 
 export function setVolume(vol: number) {
+  if (moduleDisposed) return
   const a = getAudio();
   a.volume = vol;
 }
 
 export function setPlaybackRate(rate: number) {
+  if (moduleDisposed) return
   const a = getAudio();
   a.playbackRate = rate;
   updateMediaSessionPositionState();
 }
 
 export function stop() {
-  if (!acquireOperationLock()) return; // P0-5
-  try {
-    const a = getAudio();
-    a.pause();
-    a.removeAttribute('src');
-    a.load();
-    usePlayerStore.getState().setIsPlay(false);
-    updateMediaSessionPlaybackState(false);
-    cancelRetryTimer(); // P1-9
-  } finally {
-    releaseOperationLock();
-  }
+  if (moduleDisposed) return
+  invalidatePlayback()
+  disposeAudioInstance()
+  usePlayerStore.getState().setIsPlay(false);
+  usePlayerStore.getState().setIsLoading(false);
+  updateMediaSessionPlaybackState(false);
 }
 
 export function getCurrentTime(): number {
@@ -638,9 +704,10 @@ export async function fetchSongs(startIndex: number, count = 3) {
 
     // 预加载 URL（不覆盖已有的）
     if (!song.playMusicUrl) {
-      parseMusicUrl(song.id, song, musicQuality).then((url) => {
-        if (url && !song.playMusicUrl) {
-          song.playMusicUrl = url;
+      parseMusicUrl(song.id, song, musicQuality).then((result) => {
+        if (result && !song.playMusicUrl) {
+          song.playMusicUrl = result.url;
+          song.musicSource = result.source;
           console.log(`[Audio] fetchSongs: preloaded URL for "${song.name}"`);
         }
       }).catch(() => {/* non-critical */});
@@ -653,46 +720,81 @@ export async function fetchSongs(startIndex: number, count = 3) {
 
 // ═══════════════ 音源选择 → 重新解析当前歌曲 ═══════════════
 export async function reparseWithSource(source: string) {
+  if (moduleDisposed) return
   const player = usePlayerStore.getState();
   const playlist = usePlaylistStore.getState();
-  const song = playlist.getCurrentSong();
+  const song = player.playMusic || playlist.getCurrentSong();
   if (!song) { showToast('无法操作', '没有正在播放的歌曲'); return; }
 
   const quality = useSettingsStore.getState().musicQuality || 'exhigh';
+  const thisGeneration = ++playGeneration
+  preloadedNext = null
 
-  // pause + loading
-  player.setIsLoading(true);
-  const a = audio ?? getAudio();
-  const savedTime = a.currentTime; // 保存播放位置
-  a.pause();
+  const previousAudio = audio
+  const savedTime = previousAudio?.currentTime || 0
+  const shouldResume = !!previousAudio && (!previousAudio.paused || player.isPlay)
+  disposeAudioInstance()
+  player.setIsPlay(false)
+  player.setIsLoading(true)
+  updateMediaSessionPlaybackState(false)
+  let operationAudio: HTMLAudioElement | null = null
 
   try {
     console.log(`[Audio] Reparse with source "${source}" for "${song.name}"`);
-    const url = await musicParser.parseMusicWithSource(song.id, song, quality, source);
+    const result = await musicParser.parseMusicWithSource(song.id, song, quality, source);
 
-    if (url) {
-      song.playMusicUrl = url;
+    const currentSong = usePlayerStore.getState().playMusic
+    if (!isCurrentGeneration(thisGeneration) || currentSong?.id !== song.id) return
+
+    if (result) {
+      song.playMusicUrl = result.url;
+      song.musicSource = result.source;
       song['expiredAt'] = Date.now() + 24 * 60 * 60 * 1000;
-      player.setPlayMusicUrl(url);
-      a.src = url;
-      a.currentTime = savedTime;
+      applyActiveSource(song, result.source);
+      player.setPlayMusic({ ...song });
+      player.setPlayMusicUrl(result.url);
+      const a = getAudio()
+      operationAudio = a
+      a.src = result.url;
       a.volume = player.isMuted ? 0 : player.volume;
       a.playbackRate = player.playbackRate;
-      await a.play();
-      player.setIsPlay(true);
-      player.setIsLoading(false);
+
+      if (savedTime > 0) {
+        const restorePosition = () => {
+          if (!isCurrentGeneration(thisGeneration) || audio !== a) return
+          const maxTime = Number.isFinite(a.duration) ? Math.max(0, a.duration - 0.05) : savedTime
+          a.currentTime = Math.min(savedTime, maxTime)
+        }
+        if (a.readyState >= 1) restorePosition()
+        else a.addEventListener('loadedmetadata', restorePosition, { once: true })
+      }
+
+      if (shouldResume) {
+        await a.play();
+        if (!isCurrentGeneration(thisGeneration) || usePlayerStore.getState().playMusic?.id !== song.id) {
+          cleanupStaleAudio(a)
+          return
+        }
+        player.setIsPlay(true);
+      } else {
+        player.setIsPlay(false)
+      }
 
       saveSession(); // ★ 切换音源后保存会话
       notifyTray(song); // ★ 更新托盘 tooltip
-      const srcLabel = AVAILABLE_SOURCES.find(s => s.key === source)?.label || source;
+      const srcLabel = AVAILABLE_SOURCES.find(s => s.key === result.source)?.label || result.source;
       showToast(`切换到 ${srcLabel}`, song.name);
     } else {
-      player.setIsLoading(false);
       showToast('解析失败', `${song.name} — 该音源无可用 URL`);
     }
   } catch (e) {
-    player.setIsLoading(false);
+    if (!isCurrentGeneration(thisGeneration)) {
+      if (operationAudio) cleanupStaleAudio(operationAudio)
+      return
+    }
     console.warn(`[Audio] Reparse failed:`, e);
     showToast('解析失败', '请尝试其他音源');
+  } finally {
+    if (isCurrentGeneration(thisGeneration)) player.setIsLoading(false)
   }
 }

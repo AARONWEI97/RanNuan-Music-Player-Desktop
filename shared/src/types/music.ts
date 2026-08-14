@@ -76,6 +76,8 @@ export interface SongResult {
   dt?: number;
   duration?: number;
   source?: string;
+  /** 实际解析命中的音源 key（bodian/qq/...），勿与业务字段 source（如 dj）混淆 */
+  musicSource?: string;
   [key: string]: any;
 }
 

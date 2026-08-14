@@ -11,6 +11,7 @@ interface SavedSong {
   dt?: number
   duration?: number
   source?: string
+  musicSource?: string
 }
 
 interface SavedPlaylistItem {
@@ -22,6 +23,7 @@ interface SavedPlaylistItem {
   dt?: number
   duration?: number
   source?: string
+  musicSource?: string
 }
 
 interface SessionData {
@@ -55,6 +57,7 @@ export function saveSession(): void {
         dt: song.dt,
         duration: song.duration,
         source: song.source,
+        musicSource: song.musicSource,
       },
       playMusicUrl: player.playMusicUrl,
       playList: playlist.playList.map((s) => ({
@@ -66,6 +69,7 @@ export function saveSession(): void {
         dt: s.dt,
         duration: s.duration,
         source: s.source,
+        musicSource: s.musicSource,
       })),
       playListIndex: playlist.playListIndex,
       playMode: playlist.playMode,
@@ -185,7 +189,7 @@ export async function restoreSession(): Promise<boolean> {
 
   // ★ 调用 playSong 完成 URL 解析 + 设置 audio.src，但不自动播放
   const { playSong } = await import('./audioService')
-  await playSong(currentSong, 0, false) // autoPlay=false → 只设置 src，不播放
+  await playSong(currentSong, false) // autoPlay=false → 只设置 src，不播放
 
   console.log('[Session] ✅ 会话恢复完成（已暂停，src 已就绪，点击播放即可）')
   return true

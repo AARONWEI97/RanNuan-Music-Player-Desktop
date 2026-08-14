@@ -6,6 +6,8 @@ import { lazyStorageAdapter } from '../storageAdapter';
 interface PlayerState {
   playMusic: SongResult | null;
   playMusicUrl: string;
+  /** 当前播放实际命中的音源 key（与 AVAILABLE_SOURCES 对齐），供音源选择器打勾 */
+  activeSource: string | null;
   isPlay: boolean;
   isLoading: boolean;
   duration: number;
@@ -18,6 +20,7 @@ interface PlayerState {
 interface PlayerActions {
   setPlayMusic: (music: SongResult | null) => void;
   setPlayMusicUrl: (url: string) => void;
+  setActiveSource: (source: string | null) => void;
   setIsPlay: (isPlay: boolean) => void;
   setIsLoading: (loading: boolean) => void;
   setDuration: (duration: number) => void;
@@ -34,6 +37,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
     (set) => ({
       playMusic: null,
       playMusicUrl: '',
+      activeSource: null,
       isPlay: false,
       isLoading: false,
       duration: 0,
@@ -44,6 +48,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
 
       setPlayMusic: (music) => set({ playMusic: music }),
       setPlayMusicUrl: (url) => set({ playMusicUrl: url }),
+      setActiveSource: (source) => set({ activeSource: source }),
       setIsPlay: (isPlay) => set({ isPlay }),
       setIsLoading: (loading) => set({ isLoading: loading }),
       setDuration: (duration) => set({ duration }),
@@ -56,6 +61,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
         set({
           playMusic: null,
           playMusicUrl: '',
+          activeSource: null,
           isPlay: false,
           isLoading: false,
           duration: 0,
@@ -75,9 +81,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>()(
           dt: state.playMusic.dt,
           duration: state.playMusic.duration,
           source: state.playMusic.source,
-          playMusicUrl: state.playMusicUrl, // ★ 保存当前有效的播放 URL
+          musicSource: state.playMusic.musicSource,
+          playMusicUrl: state.playMusicUrl,
         } : null,
-        playMusicUrl: state.playMusicUrl, // ★ 也保存在顶层，恢复时读取
+        playMusicUrl: state.playMusicUrl,
+        activeSource: state.activeSource,
         currentProgress: state.currentProgress,
         isPlay: false,
         volume: state.volume,

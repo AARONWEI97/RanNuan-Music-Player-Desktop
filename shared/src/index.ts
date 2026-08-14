@@ -27,5 +27,5 @@ export * from './api';
 export * from './store';
 
 // ─── Services ───
-export { musicParser, parseMusicUrl } from './services/musicParser';
+export { musicParser, parseMusicUrl, type MusicParseResult } from './services/musicParser';
 export { SourceConfigManager, AVAILABLE_SOURCES } from './services/SongSourceConfigManager';
