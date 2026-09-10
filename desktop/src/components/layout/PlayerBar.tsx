@@ -2,12 +2,13 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { usePlayerStore, usePlaylistStore, useSettingsStore } from '@shared'
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart, Loader2, PawPrint } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume, setPlaybackRate } from '@/services/audioService'
-import { useRef, useCallback, useState } from 'react'
+import { useRef, useCallback, useState, useEffect } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
 import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
 import { thumbUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
 import SourceSelector from '@/components/player/SourceSelector'
-import { setLyricsWindow } from '@/services/playerBridge'
+import { toggleLyricsWindow, isLyricsWindowOpen } from '@/services/playerBridge'
 
 function fmtMs(ms: number) {
   if (!ms || ms < 0) return '00:00'
@@ -120,11 +121,32 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
   const vol = isMuted ? 0 : (volume ?? 0.5)
 
   // ── lyrics toggle ──
-  const openLyrics = () => {
-    setLyricsWindow(true).catch((error) => {
-      console.error('[PlayerBar] 打开桌面歌词失败:', error)
-      showToast('桌面歌词打开失败', '请确认当前运行的是桌面版')
+  const [lyricsOpen, setLyricsOpen] = useState(() => isLyricsWindowOpen())
+
+  useEffect(() => {
+    setLyricsOpen(isLyricsWindowOpen())
+    if (!isTauri()) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      if (disposed) return
+      listen<boolean>('lyrics:visible-state', (event) => {
+        setLyricsOpen(!!event.payload)
+      }).then((fn) => { unlisten = fn })
     })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
+
+  const toggleLyrics = () => {
+    toggleLyricsWindow()
+      .then((open) => setLyricsOpen(open))
+      .catch((error) => {
+        console.error('[PlayerBar] 切换桌面歌词失败:', error)
+        showToast('桌面歌词切换失败', '请确认当前运行的是桌面版')
+      })
   }
 
   // ═══════════ RENDER ═══════════
@@ -243,8 +265,10 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
 
           <SourceSelector />
 
-          <button onClick={openLyrics} title="打开桌面歌词"
-            className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-[#e60026] transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04]">
+          <button onClick={toggleLyrics} title={lyricsOpen ? '关闭桌面歌词' : '打开桌面歌词'}
+            className={`p-1.5 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04] ${
+              lyricsOpen ? 'text-[#e60026]' : 'text-gray-400 dark:text-gray-500 hover:text-[#e60026]'
+            }`}>
             <Mic2 className="w-[17px] h-[17px]" />
           </button>
         </div>

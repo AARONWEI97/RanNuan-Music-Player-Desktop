@@ -269,6 +269,11 @@ export async function setLyricsWindow(open: boolean): Promise<boolean> {
   return lyricsOpen
 }
 
+/** 切换桌面歌词窗口开/关 */
+export async function toggleLyricsWindow(): Promise<boolean> {
+  return setLyricsWindow(!lyricsOpen)
+}
+
 export function isLyricsWindowOpen() {
   return lyricsOpen
 }

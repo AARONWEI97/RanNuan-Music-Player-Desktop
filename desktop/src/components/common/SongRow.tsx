@@ -5,8 +5,10 @@ import { usePlaylistStore } from '@shared'
 import { isFavorite as checkIsFavorite, toggleFavorite } from '@/store/favoritesStore'
 import { showToast } from '@/utils/toast'
 import { showContextMenu } from '@/hooks/useContextMenu'
+import { openAddToPlaylistModal } from '@/services/addToPlaylistModal'
+import { useAuthStore } from '@/store/authStore'
 import { useNavigate } from 'react-router-dom'
-import { Play, ListPlus, Heart, MoreHorizontal, User, DiscAlbum, Download, Info, Music, MessageCircle, Trash2, RefreshCw } from 'lucide-react'
+import { Play, ListPlus, Heart, MoreHorizontal, User, DiscAlbum, Download, Info, Music, MessageCircle, Trash2, RefreshCw, FolderPlus } from 'lucide-react'
 
 interface SongRowProps {
   song: SongResult
@@ -83,6 +85,14 @@ const SongRow = memo(function SongRow({
     showToast(added ? '已收藏' : '已取消收藏', song.name)
   }, [fav, onToggleFavorite, song])
 
+  const openAddToPlaylist = useCallback(() => {
+    if (!useAuthStore.getState().isLoggedIn) {
+      showToast('请先登录', '登录后才能添加歌曲到歌单')
+      return
+    }
+    openAddToPlaylistModal(song)
+  }, [song])
+
   const openMenu = useCallback((x: number, y: number) => {
     setMenuOpen(true)
     showContextMenu(x, y, [
@@ -98,6 +108,11 @@ const SongRow = memo(function SongRow({
           addToNextPlay(song)
           showToast('已添加到播放队列', '下一首播放')
         },
+      },
+      {
+        label: '添加到歌单',
+        icon: <FolderPlus className="w-4 h-4" />,
+        onClick: openAddToPlaylist,
       },
       {
         label: fav ? '取消收藏' : '收藏',
@@ -159,7 +174,7 @@ const SongRow = memo(function SongRow({
         onClick: () => onReparse(song),
       }] : []),
     ], { onClose: () => setMenuOpen(false) })
-  }, [onPlay, addToNextPlay, song, fav, navigate, inOwnPlaylist, onRemoveFromPlaylist, onReparse])
+  }, [onPlay, addToNextPlay, song, fav, navigate, inOwnPlaylist, onRemoveFromPlaylist, onReparse, openAddToPlaylist])
 
   const handleMore = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()

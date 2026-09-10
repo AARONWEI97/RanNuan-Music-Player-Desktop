@@ -636,9 +636,52 @@ html.dog-theme .dog-app-shell [class~="from-[#e60026]"] {
   animation: dogPawPulse 2.8s ease-in-out infinite;
 }
 
-.dog-main > :not(.dog-corner-pet) {
+.dog-main > :not(.dog-corner-pet):not(.universe-page) {
   position: relative;
   z-index: 1;
+}
+
+.dog-main > .universe-slot {
+  height: 100%;
+}
+
+.dog-main:has(> .universe-slot) {
+  padding: 12px 12px 16px;
+  overflow: hidden;
+}
+
+.universe-page {
+  border: 1px solid color-mix(in srgb, var(--dog-border, rgba(255, 255, 255, 0.18)) 88%, white 12%);
+  box-shadow:
+    0 12px 30px color-mix(in srgb, var(--dog-accent, #b86f58) 12%, transparent),
+    0 2px 8px rgba(66, 35, 25, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.universe-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 247, 237, 0.12), transparent 13%, transparent 88%, rgba(0, 0, 0, 0.08));
+}
+
+.universe-page iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+html.dark.dog-theme .universe-page {
+  border-color: color-mix(in srgb, var(--dog-border) 86%, var(--dog-accent) 14%);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .dog-corner-pet {

@@ -14,6 +14,7 @@ import MiniPlayer from './MiniPlayer'
 import FloatingLyrics from './FloatingLyrics'
 import ToastContainer from '@/components/common/Toast'
 import ContextMenu from '@/components/common/ContextMenu'
+import AddToPlaylistModal from '@/components/common/AddToPlaylistModal'
 import DownloadProgressToast from '@/components/common/DownloadProgressToast'
 
 const MINI_WIDTH = 360
@@ -159,6 +160,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <MiniPlayer onRestore={exitMiniMode} onPlaylistToggle={handlePlaylistToggle} />
         <FloatingLyrics />
         <ContextMenu menu={menu} />
+        <AddToPlaylistModal />
       </div>
     )
   }
@@ -191,6 +193,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <ToastContainer />
       <DownloadProgressToast />
       <ContextMenu menu={menu} />
+      <AddToPlaylistModal />
     </div>
   )
 }

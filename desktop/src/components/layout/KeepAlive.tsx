@@ -138,7 +138,12 @@ function CachedSlot({
 
   return (
     <KeepAliveContext.Provider value={isActive}>
-      <div style={{ display: isActive ? undefined : 'none' }}>{children}</div>
+      <div
+        className={cacheKey === '/universe' ? 'universe-slot' : undefined}
+        style={{ display: isActive ? undefined : 'none' }}
+      >
+        {children}
+      </div>
     </KeepAliveContext.Provider>
   )
 }
