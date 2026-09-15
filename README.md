@@ -79,6 +79,7 @@
 - **本地优先架构** — IndexedDB 存储照片/视频/音乐，离线可用
 - **iframe 嵌入** — RanRan 独立构建，`/universe` 路由零耦合集成
 - **离页卸载** — 离开宇宙相册时卸载 iframe，释放 WebGL/GPU/动画后台占用
+- **宇宙设置已接通** — 主题/轨道/旋转/粒子/过渡/导入导出/歌词流星都会改星空真实行为；嵌入时不抢桌面播放器
 
 ---
 
@@ -286,7 +287,7 @@ cd ..
 npx tauri dev
 ```
 
-> 📖 完整文档：[desktop/DESKTOP_DEV.md §二十六](desktop/DESKTOP_DEV.md) | [RanRan PROJECT_DOC.md](desktop/RanRan-main/PROJECT_DOC.md)
+> 📖 完整文档：[desktop/DESKTOP_DEV.md §二十六～三十三](desktop/DESKTOP_DEV.md) | [RanRan PROJECT_DOC.md](desktop/RanRan-main/PROJECT_DOC.md)
 
 ---
 
@@ -294,8 +295,8 @@ npx tauri dev
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| **桌面端开发文档** | [`desktop/DESKTOP_DEV.md`](desktop/DESKTOP_DEV.md) | 桌面端完整文档：项目结构/共享层/功能清单/快捷键/路由/性能优化/下载系统/宇宙相册集成/近期修复 |
-| **RanRan 项目文档** | [`desktop/RanRan-main/PROJECT_DOC.md`](desktop/RanRan-main/PROJECT_DOC.md) | 8 节完整文档：核心特性/技术栈/目录结构/架构治理/6 个 Phase 开发路线图 |
+| **桌面端开发文档** | [`desktop/DESKTOP_DEV.md`](desktop/DESKTOP_DEV.md) | 桌面端完整文档：项目结构/共享层/功能清单/快捷键/路由/宇宙相册集成/托盘歌词/设置接通（§三十三） |
+| **RanRan 项目文档** | [`desktop/RanRan-main/PROJECT_DOC.md`](desktop/RanRan-main/PROJECT_DOC.md) | 核心特性/技术栈/目录结构/架构治理/Phase 0–7 路线图 |
 
 ---
 

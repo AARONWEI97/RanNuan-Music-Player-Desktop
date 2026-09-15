@@ -651,22 +651,14 @@ html.dog-theme .dog-app-shell [class~="from-[#e60026]"] {
 }
 
 .universe-page {
-  border: 1px solid color-mix(in srgb, var(--dog-border, rgba(255, 255, 255, 0.18)) 88%, white 12%);
+  border: 1px solid color-mix(in srgb, var(--dog-border, rgba(255, 255, 255, 0.12)) 70%, transparent);
   box-shadow:
-    0 12px 30px color-mix(in srgb, var(--dog-accent, #b86f58) 12%, transparent),
-    0 2px 8px rgba(66, 35, 25, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .universe-page::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 247, 237, 0.12), transparent 13%, transparent 88%, rgba(0, 0, 0, 0.08));
+  content: none;
 }
 
 .universe-page iframe {

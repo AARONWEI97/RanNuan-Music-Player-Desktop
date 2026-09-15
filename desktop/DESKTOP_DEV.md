@@ -94,11 +94,14 @@ desktop/
 │   │   ├── CommentHistoryPage.tsx ← 评论历史（时间线卡片+类型过滤+分页+删除+点赞）
 │   │   ├── HeatmapPage.tsx   ← 听歌热力图（年度月历网格/getMusicCalendar/深浅绿色渐变）
 │   │   ├── DownloadPage.tsx  ← 下载管理（Hero大图+grid列表+文件路径+打开文件夹按钮+进度弹窗）
-│   │   └── PlaylistImportPage.tsx ← 歌单导入（链接/文本两种模式/importPlaylist+轮询状态）
+│   │   ├── PlaylistImportPage.tsx ← 歌单导入（链接/文本两种模式/importPlaylist+轮询状态）
+│   │   └── UniversePage.tsx  ← 宇宙相册（iframe 加载 /ranran/index.html，桥接桌面端播放状态）
 │   ├── services/
 │   │   ├── audioService.ts   ← HTMLAudioElement 播放控制（play/pause/seek/volume/rate/预加载/MediaSession/saveSession/trayTooltip）
 │   │   ├── sessionManager.ts ← 会话持久化（localStorage 直写，刷新/重启后恢复播放状态）
-│   │   └── shellService.ts   ← Tauri Shell 服务（打开文件夹/获取下载路径）
+│   │   ├── shellService.ts   ← Tauri Shell 服务（打开文件夹/获取下载路径）
+│   │   ├── universeBridge.ts ← 宇宙相册 iframe 桥（推播放快照、执行搜索/切歌命令）
+│   │   └── universeProtocol.ts ← 宇宙相册消息契约（与 RanRan bridge/protocol.ts 字段对齐）
 │   ├── hooks/
 │   │   ├── usePlaybackControl.ts  ← 统一播放控制 Hook（播放/暂停/切歌/进度/速率/状态同步）
 │   │   ├── useSleepTimer.ts       ← 睡眠定时器 Hook（倒计时自动停止播放）
@@ -263,6 +266,15 @@ desktop/
 - [x] 歌词解析支持 `lrc/tlyric/yrc/romalrc`，含翻译、罗马音和网易新版逐字歌词
 - [x] 歌词弹窗面板（`Ctrl+L`，逐行高亮 + 自动滚动居中 + 翻译/罗马音）
 - [x] 桌面悬浮歌词（`Ctrl+D`，可拖拽，透明背景，逐行高亮 + 翻译/罗马音）
+- [x] 宇宙相册歌词流星（播放中当前行从上往下落到屏幕底部闪光，见第三十二 / 三十三节）
+
+### 宇宙相册
+- [x] iframe 嵌入 RanRan（`/universe`，离页卸载 WebGL）
+- [x] 桌面端播放桥（歌名/封面/进度/歌词 → 恒星脉冲与流星）
+- [x] 照片行星自发光铺满 + Kepler 共面公转
+- [x] 独立影院自动播放循环（进影院卸载 Canvas）
+- [x] 宇宙设置模块接到真实行为（主题/轨道/旋转/粒子/过渡/导入导出/歌词流星/开场/性能）
+- [ ] 星空页全息屏与 WebGL 同屏循环播放（WebView2 解码冲突，禁止用进程级浏览器参数去换）
 
 ### 搜索与导航
 - [x] 搜索页（关键词搜索 + 搜索建议 + 9 类搜索 tab）
@@ -312,6 +324,7 @@ desktop/
 
 ### 设置
 - [x] 设置页面（API 基础地址/默认音质/快捷键说明）
+- [x] 宇宙相册内设置（`SettingsModal`：主题/渐变/轨道/自动旋转/粒子/过渡/导入导出，嵌入态改为宇宙联动）
 
 ---
 
@@ -361,6 +374,7 @@ desktop/
 | `/heatmap` | HeatmapPage | 听歌热力图（月历网格/getMusicCalendar） |
 | `/download` | DownloadPage | 下载管理（localStorage任务列表） |
 | `/playlist-import` | PlaylistImportPage | 歌单导入（链接/文本/importPlaylist） |
+| `/universe` | UniversePage | 宇宙相册（RanRan iframe，`keepMounted: false`） |
 
 ---
 
@@ -2067,12 +2081,17 @@ desktop/
 # 开发时修改 RanRan 代码后：
 cd desktop\RanRan-main
 npm run build
-xcopy dist\* ..\public\ranran\ /E /Y
+cd ..
+Remove-Item -Recurse -Force public\ranran
+New-Item -ItemType Directory -Path public\ranran | Out-Null
+Copy-Item -Path RanRan-main\dist\* -Destination public\ranran -Recurse -Force
+# 同步改 UniversePage.tsx 里 iframe ?build= 缓存号
 
 # 然后重启 npx tauri dev（WebView2 缓存需要完全重启）
-cd ..
 npx tauri dev
 ```
+
+详见第三十一 / 三十二节（混合体验、影院拆路、行星贴图、明天待办）。
 
 ### 26.6 关键技术点
 
@@ -2354,6 +2373,8 @@ Rust 会临时恢复输入以展示控制条，离开后重新启用穿透。解
 不依赖主窗口 WebView。
 前端不得调用 `unregisterAll()`，也不得再注册页面内 `Ctrl+D` fallback，否则会造成启动后失效或一次按键切换两次。
 
+**禁止给主窗口加 `additionalBrowserArgs`。** WebView2 启动参数是进程级的，歌词窗和托盘面板是透明副窗口，共用同一个浏览器进程。曾经为了让宇宙视频和 WebGL 同时解码加上 `--disable-accelerated-video-decode`，结果桌面歌词和托盘右键一起空掉。面板创建失败时 `lib.rs` 仍会回退原生菜单；正常路径必须在 `setup` 里立刻预建歌词窗和托盘面板，不要改成延迟创建。
+
 ### 30.6 文件变更清单
 
 | 文件 | 操作 | 说明 |
@@ -2405,3 +2426,239 @@ http://localhost:5173/index.html?w=lyrics&mock=1
 | 面板 / 歌词窗浏览器渲染 | ✅ 已截图确认 |
 | `npx tauri dev` 启动 | ✅ 无错误，未触发原生菜单回退 |
 | 托盘左右键实机交互 | ⚠️ 需人工点击验证 |
+
+---
+
+## 三十一、宇宙相册混合体验（播放器沉浸视图）
+
+> 保留 3D 照片宇宙，但嵌入时不再是独立应用。音乐只走桌面端 `PlayerBar`，场景随当前歌曲呼吸。
+> 更新日期：2026-09-14（设置已接通，见第三十三节；视觉见第三十二节）
+
+### 31.1 产品定位
+
+- 照片仍是行星；上传、标签、时间轴、全息预览保留
+- 嵌入态去掉 RanRan Logo、内部播放器和「上传本地音乐」引导
+- 空格 / 切歌转发到桌面端 `audioService`
+- 情绪推荐搜索真实曲库（收藏 + 最近播放 + `getSearch`），点选后进入当前队列
+- 恒星用当前封面贴图并随播放脉冲；暂停时轨道变缓
+- 歌词以流星形式划过星空，不走 HTML 浮层（避免盖住影院）
+- `dog-theme` 下 HUD 自动切到「冉暖星河」暖色
+
+### 31.2 桥接协议
+
+主窗口 `universeBridge.ts` ⇄ iframe `universeHost.ts`，消息带 `channel: ranran-universe`。
+
+| 方向 | type | 说明 |
+|------|------|------|
+| iframe → 父 | `universe:ready` | 进页后立刻要一份快照 |
+| 父 → iframe | `universe:state` | 歌名/封面/播放态/进度/歌词行，250ms 节流 |
+| iframe → 父 | `universe:cmd` | `toggle-play` / `next` / `prev` / `search` / `play-song` |
+| 父 → iframe | `universe:search-result` | 真实歌曲列表 |
+
+快照字段见 `universeProtocol.ts`：`song` / `isPlay` / `currentProgress` / `duration` / `lyric.lines+index` / `theme`。
+
+### 31.3 关键文件
+
+| 文件 | 说明 |
+|------|------|
+| `desktop/src/services/universeProtocol.ts` | 消息契约 |
+| `desktop/src/services/universeBridge.ts` | 订阅 store、搜索、播放分发 |
+| `desktop/src/pages/UniversePage.tsx` | iframe + `allow=autoplay;fullscreen` + 缓存号 `?build=` |
+| `desktop/RanRan-main/src/bridge/*` | iframe 侧 host store |
+| `Sun.tsx` | 恒星 Shader + 当前歌曲封面贴图 + 播放脉冲 |
+| `PhotoPlanet.tsx` / `usePlanetTexture.ts` | 照片铺满行星（自发光，不吃暗光照） |
+| `HologramScreen.tsx` | 星空页全息封面：静音循环 VideoTexture |
+| `HologramCinema.tsx` | 独立 HTML5 影院：自动播放 + 循环 |
+| `LyricMeteors.tsx` | 当前歌词流星 |
+| `kepler.ts` | 8 条共面开普勒轨道带 |
+
+离开 `/universe` 仍卸载 iframe，释放 WebGL。改完 RanRan 后必须 rebuild 并拷到 `desktop/public/ranran/`，然后重启 `npx tauri dev`（WebView2 缓存）。
+
+### 31.4 硬约束（后续改动不要踩）
+
+| 约束 | 原因 |
+|------|------|
+| 进影院必须卸载 `Canvas`（`pauseScene`） | WebGL + HTML5 video 双解码在 WebView2 会播约 2 秒后卡住；全屏才能勉强动 |
+| 星空页封面与影院不同时解码 | 封面用一颗隐藏的 muted `<video>` 喂 `VideoTexture`；进影院先 `pause` 封面再播影院 |
+| 影院不用 `drei Html` / Framer Motion 包住 `<video>` | 会把歌词、提示字、3D HUD 以 `z-index ~16777271` 盖到画面上 |
+| 行星贴图用 `meshBasicMaterial`（unlit） | `meshStandardMaterial` + 深空光照会把照片压成纯色黑球 |
+| 轨道用 `kepler.ts` 的 8 条带，不要按 index 叠倾角 | 否则行星满屏乱飞 |
+| 视频优先 H.264 MP4 | HEVC / 部分编码在 WebView2 无法连续解码 |
+| iframe `allow="autoplay; fullscreen"` | 封面静音循环和影院自动播都依赖它 |
+
+### 31.5 构建与缓存
+
+当前 iframe：`/ranran/index.html?build=20260914g-${frameKey}`。改 RanRan 后：
+
+```powershell
+cd desktop\RanRan-main
+npm run build
+cd ..
+Remove-Item -Recurse -Force public\ranran
+New-Item -ItemType Directory -Path public\ranran | Out-Null
+Copy-Item -Path RanRan-main\dist\* -Destination public\ranran -Recurse -Force
+# 改 UniversePage 里的 build= 缓存号，然后重启 tauri
+npx tauri dev
+```
+
+只切走再点回「宇宙相册」有时能吃到新包（`keepMounted: false`），不可靠时仍要整进程重启。
+
+---
+
+## 三十二、宇宙相册视觉与影院（2026-09-13 快照）
+
+> 状态：主体链路已通。2026-09-14 的设置接通与歌词/托盘回滚见第三十三节。
+
+### 32.1 已落地
+
+| 模块 | 现状 |
+|------|------|
+| 开场动画 | `UniverseIntro` 保留，嵌入态也会播 |
+| 星河 | 四臂螺旋 + `SoftPoints` 圆点（避免 `PointsMaterial` 方块）+ 银道带 + 星云；星系内半径约 118，不压太阳系 |
+| 太阳 | Shader 恒星 + 当前歌曲封面半透明罩层，播放时脉冲、暂停时变缓 |
+| 行星公转 | Kepler：`ORBIT_BELTS = [16, 23, 31, 41, 53, 67, 83, 102]`，`n ∝ a^-1.5`，小偏心率/倾角 |
+| 行星外观 | 相册照片 UV 铺满球体，`meshBasicMaterial toneMapped={false}` + 背光晕，类似太阳那种自发光球，不再是纯色 |
+| 贴图加载 | `usePlanetTexture`：缩略图先上球，`usePhotoUrl` 的 blob 随后替换；`Image` 解码，避免 `TextureLoader` 对 data/blob URL 静默失败 |
+| 全息屏（星空里） | 片库有视频时，封面 **静音循环** 当前影像；退出影院后继续播，不再黑框 |
+| 全息影院 | 独立原生 `<video>`，点进去 **自动播放并循环**；多段自动切下一首；自定义控件；支持网页全屏 |
+| 歌词 | 播放中当前行变成 3D 流星（发光字 + 拖尾），只存在于 Canvas 内，进影院随场景卸载 |
+| 底部坞 | 螺旋臂/太阳系、深空/晨昏、影院、片库、当前桌面端歌曲名 |
+
+### 32.2 影院播放策略（为什么这样拆）
+
+```
+星空页：隐藏 muted <video> 循环  →  VideoTexture 贴到 HologramScreen
+         Canvas + Bloom 开着
+         影院组件 isOpen=false，不挂第二路解码
+
+点进影院：pause 封面 video
+         卸载 Canvas / HUD / 星座选择器
+         挂独立 HTML5 <video>，自动 play + loop
+
+退出影院：停影院 video
+         重新挂 Canvas
+         封面 video 再 muted play，VideoTexture 重建
+```
+
+禁止再把影院 video 填进 3D 平面当 `VideoTexture` 的同时保留 HTML 播放器——这就是「播两秒卡住、必须网页全屏才正常」的根因。
+
+### 32.3 行星贴图策略（为什么会变成纯色）
+
+上一轮为了修纹理泄漏，行星改回 `meshStandardMaterial`。深空 `ambientLight ≈ 0.12`，照片被乘暗，看起来像棕/黑色实心球。星座背景能看见狗狗照片，是因为它们用的是 **unlit** `meshBasicMaterial`。
+
+当前：行星与星座同一套思路——照片当自发光表面，外层加一圈加法混合光晕，不再叠云层（云层会盖住封面）。
+
+### 32.4 关键源码
+
+| 路径 | 职责 |
+|------|------|
+| `RanRan-main/src/components/astronomy/UniverseView.tsx` | 编排 Canvas / 封面 video / 影院 / 片库 |
+| `RanRan-main/src/components/astronomy/Scene.tsx` | 星空组合；`cinemaOpen` 时关后处理 |
+| `RanRan-main/src/components/astronomy/PhotoPlanet.tsx` | 开普勒位置 + 照片球 |
+| `RanRan-main/src/hooks/usePlanetTexture.ts` | 行星贴图 |
+| `RanRan-main/src/components/astronomy/HologramScreen.tsx` | 封面 VideoTexture / 无片时占位画布 |
+| `RanRan-main/src/components/astronomy/HologramCinema.tsx` | 独立影院播放器 |
+| `RanRan-main/src/components/astronomy/LyricMeteors.tsx` | 歌词流星 |
+| `RanRan-main/src/components/astronomy/SoftPoints.tsx` | 圆形星点 |
+| `RanRan-main/src/services/videoElementManager.ts` | **遗留单例，影院已不再使用**，勿接回去双解码 |
+
+当前构建产物：`desktop/public/ranran/assets/index-CrD5kTd_.js`（缓存号 `20260913b`）。
+
+### 32.5 明天优先（微调，不翻架构）
+
+按实机验证顺序，而不是再拆方案：
+
+1. **重启 `npx tauri dev` 后走一遍主路径**：行星是否铺满照片、星空全息屏是否循环、点进影院是否自动连播、退出后封面是否还在播、歌词流星是否可读。
+2. 行星大小 / 轨道疏密 / 默认相机：照片要能看清，又不要挡太阳和全息屏。
+3. 全息屏距离与朝向：现在在 `[0, 22, -128]`，远景可能偏暗或偏小。
+4. 歌词流星：字号、速度、中文清晰度；空行/间奏不要刷流星。
+5. 片库无视频时的占位屏文案与亮度。
+6. 清理或明确废弃 `videoElementManager.ts`，避免以后又接回双解码。
+7. `performance.ts` 里仍有历史 `tsc` 报错（`TS7053` / `TS2322`），与本次视觉无关，有空再清。
+
+### 32.6 已知限制
+
+| 项 | 说明 |
+|----|------|
+| 无 HMR | 改 RanRan 必须 build + 拷贝 + 重启 tauri |
+| 离页卸载 | 离开 `/universe` 释放 GPU；IndexedDB 照片/片库仍在 |
+| 封面解码 | 星空页仍有一路 muted 视频 + WebGL，低端 GPU 可能掉帧，不要再加第二路 |
+| 自动播放 | iframe 已 `allow=autoplay`；若个别环境仍拦有声自动播，影院会先 muted 再播，用户可点取消静音 |
+| 编码 | 请用户尽量上传 H.264 MP4 |
+
+---
+
+## 三十三、宇宙设置接通 & 歌词/托盘回滚（2026-09-14）
+
+> 今天两件实事：把宇宙相册设置从「只改 UI 状态」接到星空/存储真功能；以及撤回会弄丢桌面歌词和托盘右键的 WebView2 全局参数。
+
+### 33.1 宇宙设置：以前只写 store
+
+`SettingsModal` 里的开关一直 `persist` 到 `ranran-ui-storage`，但 3D 场景、播放器和导入导出基本不读。2026-09-14 已接通：
+
+| 设置项 | 接到哪里 |
+|--------|----------|
+| 主题 / 渐变 | CSS 变量 + 星空背景、星云、轨道颜色 |
+| 显示轨道（原「显示网格」） | `Scene` 的 `OrbitRing`；`MetaverseBackground` 的 `gridHelper` |
+| 自动旋转 | `OrbitControls.autoRotate`（旧数据默认 false，避免突然转镜头） |
+| 粒子强度 | 星星 / 星河 / 星云 / 背景粒子密度 |
+| 过渡效果 | 弹窗、照片查看器、主视图 `getMotionPreset` |
+| 背景音乐 / 音量 | 仅独立运行时驱动 `musicPlayer`；嵌入桌面端不抢 PlayerBar |
+| 歌词流星 | `UniverseView` 按开关挂 `LyricMeteors` |
+| 进入开场 | `skipIntro`，hydrate 后再决定是否跳过 `UniverseIntro` |
+| 性能档位 | `setStoredPerformanceTier`，和右下角仪表盘同步 |
+| 导出 / 导入 | `dataExport.ts` 写出照片+Blob+相册+标签+设置；导入调用 `photoStore.importLibrary` |
+
+嵌入桌面端时，设置里的「音频」改成 **宇宙联动**（歌词流星、进入开场），文案写明音乐由桌面播放器控制。
+
+关键文件：
+
+| 路径 | 职责 |
+|------|------|
+| `RanRan-main/src/components/settings/SettingsModal.tsx` | 设置 UI，嵌入/独立两套文案 |
+| `RanRan-main/src/types/index.ts` | `AppSettings` + `mergeAppSettings` |
+| `RanRan-main/src/store/modules/uiStore.ts` | persist v2，补齐旧字段 |
+| `RanRan-main/src/store/modules/photoStore.ts` | `importLibrary` 真正写回照片库 |
+| `RanRan-main/src/services/dataExport.ts` | JSON 备份含原图 Blob |
+| `RanRan-main/src/hooks/useSettingsRuntime.ts` | 性能档 + 独立态背景音乐 |
+| `RanRan-main/src/utils/motionPresets.ts` | 四种过渡动画 |
+| `RanRan-main/src/components/astronomy/Scene.tsx` | 读设置驱动轨道/粒子/旋转/主题色 |
+
+### 33.2 桌面歌词和托盘为什么会突然没了
+
+为了让星空 WebGL 和 `<video>` 同时硬解，曾在 `tauri.conf.json` 主窗口加：
+
+```
+--disable-accelerated-video-decode --autoplay-policy=no-user-gesture-required
+```
+
+并把歌词窗/托盘窗改成启动 1.5 秒后再建，还拆掉了原生菜单兜底。
+
+这是错的：
+
+1. `additionalBrowserArgs` 作用在整个 WebView2 进程，透明歌词窗和托盘面板一起受影响。
+2. 延迟建窗失败时既没有面板，也没有原生右键菜单。
+3. 对话回退改不了磁盘上的 Rust 配置，所以看起来「回到改设置之前」也修不好。
+
+**已按仓库原版撤掉。** `lib.rs` 仍在 `setup` 里立刻预建歌词窗和托盘面板；面板失败才挂原生菜单。不要再为宇宙视频去改这两处。
+
+### 33.3 全息屏还没闭环（已知限制）
+
+用户目标：进宇宙就在星空里看见片子静音循环，不必点进影院。
+
+WebView2 上 **Canvas/WebGL 和硬件视频解码会互抢**。影院能播，是因为那时 Canvas 已经卸掉。星空页再挂 `<video>` 会播一秒冻住。用进程级软件解码去换，会弄丢歌词和托盘，这条路封死。
+
+当前策略保持：
+
+- 点进影院：卸载 Canvas，原生 `<video>` 自动循环。
+- 星空页：不要再叠加第二路硬件解码；封面方案未定，下次再做，不要动 `tauri.conf.json` / `lib.rs` 窗口创建。
+
+### 33.4 当前构建
+
+| 项 | 值 |
+|----|----|
+| iframe 缓存 | `?build=20260914g` |
+| 产物 | `desktop/public/ranran/assets/index-BKv4OkZs.js` |
+| 样式 | `index-O9yNqPfw.css` |
+
+改 RanRan 后仍走 §31.5：`npm run build` → 拷 `dist` 到 `public/ranran` → 改 `build=`。只改宇宙前端时，切走再进 `/universe` 通常够；改了 `src-tauri` 必须整进程重启。

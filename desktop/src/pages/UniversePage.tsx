@@ -1,41 +1,20 @@
-import { useEffect, useState } from 'react'
-import { getSearch, type SongResult } from '@shared'
-import { playSong } from '@/services/audioService'
-import { usePlaylistStore } from '@shared'
-
-interface SearchResponse {
-  result?: {
-    songs?: SongResult[]
-  }
-  songs?: SongResult[]
-}
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { attachUniverseBridge, detachUniverseBridge } from '@/services/universeBridge'
 
 export default function UniversePage() {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const [frameKey, setFrameKey] = useState(0)
   const [frameError, setFrameError] = useState(false)
   const [frameReady, setFrameReady] = useState(false)
+
+  const bindFrame = useCallback(() => {
+    attachUniverseBridge(iframeRef.current?.contentWindow ?? null)
+  }, [])
+
   useEffect(() => {
-    const onMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.data?.type !== 'ranran:search-play') return
-      const title = String(event.data.title || '').trim()
-      const artist = String(event.data.artist || '').trim()
-      if (!title) return
-      try {
-        const response = await getSearch({ keywords: `${title} ${artist}`, type: 1, limit: 10, offset: 0 })
-        const data = response.data as SearchResponse
-        const songs = data.result?.songs ?? data.songs ?? []
-        const song = songs[0]
-        if (!song) return
-        const playlist = usePlaylistStore.getState()
-        playlist.setPlayList(songs)
-        playlist.setPlayListIndex(0)
-        await playSong(song)
-      } catch (error) {
-        console.warn('[universe] bridge playback failed', error)
-      }
+    return () => {
+      detachUniverseBridge()
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
   }, [])
 
   useEffect(() => {
@@ -55,12 +34,17 @@ export default function UniversePage() {
     <div className="universe-page absolute inset-0 overflow-hidden rounded-[18px] bg-[#050508]">
       {frameReady && (
         <iframe
+          ref={iframeRef}
           key={frameKey}
-          src={`/ranran/index.html?build=20260909-${frameKey}`}
+          src={`/ranran/index.html?build=20260915d-${frameKey}`}
           title="宇宙相册"
-          onLoad={() => setFrameError(false)}
+          onLoad={() => {
+            setFrameError(false)
+            bindFrame()
+          }}
           onError={() => setFrameError(true)}
           className="w-full h-full border-0"
+          allow="autoplay; fullscreen"
         />
       )}
       {frameError && (
@@ -69,7 +53,10 @@ export default function UniversePage() {
             <p className="text-sm">宇宙相册资源加载失败</p>
             <button
               type="button"
-              onClick={() => { setFrameError(false); setFrameKey(value => value + 1) }}
+              onClick={() => {
+                setFrameError(false)
+                setFrameKey((value) => value + 1)
+              }}
               className="mt-3 rounded-lg bg-[#e60026]/15 px-3 py-1.5 text-xs text-[#e60026] hover:bg-[#e60026]/25"
             >
               重新加载
@@ -78,5 +65,5 @@ export default function UniversePage() {
         </div>
       )}
     </div>
-  );
+  )
 }
