@@ -43,7 +43,7 @@ export function useGlobalShortcuts() {
       console.warn('[shortcuts] 初始化失败', error)
     })
 
-    // Ctrl+D / Ctrl+Alt+L 由 Rust 原生层注册，主窗口隐藏或 WebView 重载也不会失效。
+    // Ctrl+Alt+D / Ctrl+Alt+L 由 Rust 原生层注册，主窗口隐藏或 WebView 重载也不会失效。
     // 此处只注册媒体键，且不能调用 unregisterAll 影响原生歌词快捷键。
   }, [])
 }

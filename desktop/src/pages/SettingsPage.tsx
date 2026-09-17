@@ -192,7 +192,7 @@ export default function SettingsPage() {
               { key: 'Space', label: '播放 / 暂停' },
               { key: 'Ctrl + L', label: '歌词面板' },
               { key: 'Ctrl + Shift + S', label: '全局搜索' },
-              { key: 'Ctrl + D', label: '桌面歌词' },
+              { key: 'Ctrl + Alt + D', label: '桌面歌词' },
             ].map((s, i) => (
               <Row key={s.key} label={s.label} desc={undefined} last={i === 3}>
                 <kbd className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/[0.06] text-[10px] font-mono font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-white/[0.08]">

@@ -376,8 +376,8 @@ fn is_lyrics_window_open(app: tauri::AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// Ctrl+D 必须在主窗口隐藏后继续生效，因此由原生快捷键回调直接切换歌词窗，
-/// 不再依赖主窗口 WebView 的生命周期。
+/// Ctrl+Alt+D 必须在主窗口隐藏后继续生效，因此由原生快捷键回调直接切换歌词窗，
+/// 不再依赖主窗口 WebView 的生命周期。不使用 Ctrl+D，避免抢占 Excel 等应用的常用快捷键。
 fn toggle_lyrics_window_from_shortcut(app: &tauri::AppHandle) {
     let result = if is_lyrics_window_open(app.clone()) {
         close_lyrics_window(app.clone())
@@ -514,7 +514,7 @@ pub fn run() {
                             return;
                         }
 
-                        if shortcut.matches(Modifiers::CONTROL, Code::KeyD) {
+                        if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyD) {
                             toggle_lyrics_window_from_shortcut(app);
                         } else if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyL) {
                             toggle_lyrics_window_lock_from_shortcut(app);
@@ -523,7 +523,7 @@ pub fn run() {
                     .build(),
             )?;
 
-            for shortcut in ["CTRL+D", "CTRL+ALT+L"] {
+            for shortcut in ["CTRL+ALT+D", "CTRL+ALT+L"] {
                 if let Err(error) = app.global_shortcut().register(shortcut) {
                     eprintln!("[shortcuts] 注册 {shortcut} 失败: {error}");
                 }
