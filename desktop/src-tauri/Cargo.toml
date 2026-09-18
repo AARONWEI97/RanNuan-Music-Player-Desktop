@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "3.8.0"
+version = "3.8.1"
 description = "RanNuan Music Player - Desktop"
 authors = ["AARONWEI97"]
 license = ""
@@ -25,3 +25,12 @@ tauri = { version = "2.11.2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
+
+# Windows 上 Ctrl+Alt+L 经常被 QQ 等程序占用，RegisterHotKey 会失败。
+# 低级键盘钩子作为兜底，不抢系统热键表。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

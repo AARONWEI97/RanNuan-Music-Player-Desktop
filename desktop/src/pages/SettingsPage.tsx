@@ -189,15 +189,25 @@ export default function SettingsPage() {
           {/* ── Shortcuts ── */}
           <Section title="快捷键">
             {[
-              { key: 'Space', label: '播放 / 暂停' },
-              { key: 'Ctrl + L', label: '歌词面板' },
-              { key: 'Ctrl + Shift + S', label: '全局搜索' },
-              { key: 'Ctrl + Alt + D', label: '桌面歌词' },
-            ].map((s, i) => (
-              <Row key={s.key} label={s.label} desc={undefined} last={i === 3}>
-                <kbd className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/[0.06] text-[10px] font-mono font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-white/[0.08]">
-                  {s.key}
-                </kbd>
+              { keys: ['Space'], label: '播放 / 暂停', desc: '输入框内除外' },
+              { keys: ['Ctrl + K', 'Ctrl + Shift + S'], label: '全局搜索', desc: '任意页面打开搜索弹窗' },
+              { keys: ['Ctrl + Alt + D'], label: '桌面歌词', desc: '显示 / 隐藏桌面悬浮歌词' },
+              { keys: ['Ctrl + Alt + L'], label: '锁定桌面歌词', desc: '锁定后鼠标穿透，悬停可显示控制条' },
+              { keys: ['Esc'], label: '关闭弹窗', desc: '关闭搜索、队列抽屉、桌面歌词等' },
+              { keys: ['媒体键 ▶⏸'], label: '系统播放 / 暂停', desc: '系统级，应用在后台也生效' },
+              { keys: ['媒体键 ⏭ / ⏮'], label: '下一首 / 上一首', desc: '系统级，应用在后台也生效' },
+            ].map((s, i, list) => (
+              <Row key={s.keys.join('+')} label={s.label} desc={s.desc} last={i === list.length - 1}>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {s.keys.map((key) => (
+                    <kbd
+                      key={key}
+                      className="px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/[0.06] text-[10px] font-mono font-semibold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-white/[0.08]"
+                    >
+                      {key}
+                    </kbd>
+                  ))}
+                </div>
               </Row>
             ))}
           </Section>

@@ -1,7 +1,14 @@
 use std::process::Command;
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, ShortcutState};
+
+/// Windows 上 RegisterHotKey 会在按住时重复派发 Pressed，Ctrl+Alt 组合还常在
+/// 几十毫秒内连发两次。过短间隔内的重复触发直接丢掉，避免锁定被立刻切回去。
+const SHORTCUT_DEBOUNCE: Duration = Duration::from_millis(400);
 
 // ═══════════════ 副窗口标签 ═══════════════
 const PANEL_LABEL: &str = "tray-panel";
@@ -26,6 +33,132 @@ struct TrayState {
 struct LyricsWindowState {
     locked: Mutex<bool>,
     mouse_passthrough: Mutex<bool>,
+    last_lyrics_shortcut: Mutex<Option<Instant>>,
+    last_lock_shortcut: Mutex<Option<Instant>>,
+}
+
+fn accept_debounced_shortcut(slot: &Mutex<Option<Instant>>) -> bool {
+    let mut last = slot.lock().unwrap();
+    if let Some(prev) = *last {
+        if prev.elapsed() < SHORTCUT_DEBOUNCE {
+            return false;
+        }
+    }
+    *last = Some(Instant::now());
+    true
+}
+
+/// Windows 低级键盘钩子：当 RegisterHotKey 因「已被其他程序占用」失败时，
+/// 仍然能收到 Ctrl+Alt+D / Ctrl+Alt+L。QQ 默认占用 Ctrl+Alt+L，这是最常见原因。
+#[cfg(windows)]
+mod lyrics_hotkey_hook {
+    use super::{
+        toggle_lyrics_window_from_shortcut, toggle_lyrics_window_lock_from_shortcut,
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LCONTROL, VK_LMENU, VK_RCONTROL, VK_SHIFT,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, SetWindowsHookExW, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WH_KEYBOARD_LL,
+        WM_KEYDOWN, WM_SYSKEYDOWN,
+    };
+
+    const VK_D: u32 = 0x44;
+    const VK_L: u32 = 0x4C;
+
+    static APP: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
+    static CATCH_D: AtomicBool = AtomicBool::new(false);
+    static CATCH_L: AtomicBool = AtomicBool::new(false);
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+
+    fn key_down(vk: u16) -> bool {
+        unsafe { GetAsyncKeyState(vk as i32) as u16 & 0x8000 != 0 }
+    }
+
+    fn dispatch(vk: u32) -> bool {
+        let ctrl = key_down(VK_LCONTROL) || key_down(VK_RCONTROL);
+        // 只用左 Alt，避开国际键盘 AltGr（右 Alt = Ctrl+Alt）误触。
+        let alt = key_down(VK_LMENU);
+        let shift = key_down(VK_SHIFT);
+        if !ctrl || !alt || shift {
+            return false;
+        }
+
+        let toggle_window = vk == VK_D && CATCH_D.load(Ordering::SeqCst);
+        let toggle_lock = vk == VK_L && CATCH_L.load(Ordering::SeqCst);
+        if !toggle_window && !toggle_lock {
+            return false;
+        }
+
+        let Some(app) = APP.lock().unwrap().clone() else {
+            return false;
+        };
+        let _ = app.clone().run_on_main_thread(move || {
+            if toggle_window {
+                toggle_lyrics_window_from_shortcut(&app);
+            } else {
+                toggle_lyrics_window_lock_from_shortcut(&app);
+            }
+        });
+        true
+    }
+
+    unsafe extern "system" fn hook_proc(
+        code: i32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if code >= 0 {
+            let msg = wparam as u32;
+            if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+                let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
+                if kb.flags & LLKHF_INJECTED == 0 && dispatch(kb.vkCode) {
+                    return 1;
+                }
+            }
+        }
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+    }
+
+    pub fn install(app: tauri::AppHandle, catch_d: bool, catch_l: bool) {
+        if !catch_d && !catch_l {
+            return;
+        }
+        CATCH_D.store(catch_d, Ordering::SeqCst);
+        CATCH_L.store(catch_l, Ordering::SeqCst);
+        *APP.lock().unwrap() = Some(app);
+
+        if INSTALLED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let hook = unsafe {
+            SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), std::ptr::null_mut(), 0)
+        };
+        if hook.is_null() {
+            INSTALLED.store(false, Ordering::SeqCst);
+            eprintln!(
+                "[shortcuts] 键盘钩子安装失败: {}",
+                std::io::Error::last_os_error()
+            );
+            return;
+        }
+
+        let mut occupied = Vec::new();
+        if catch_d {
+            occupied.push("Ctrl+Alt+D");
+        }
+        if catch_l {
+            occupied.push("Ctrl+Alt+L");
+        }
+        eprintln!(
+            "[shortcuts] {} 已被其他程序占用（常见于 QQ 锁定快捷键），已改用键盘钩子兜底",
+            occupied.join(" / ")
+        );
+    }
 }
 
 // ═══════════════ 下载路径 ═══════════════
@@ -342,9 +475,15 @@ fn open_lyrics_window(app: tauri::AppHandle) -> Result<(), String> {
         .try_state::<LyricsWindowState>()
         .map(|state| *state.locked.lock().unwrap())
         .unwrap_or(true);
-    win.set_always_on_top(true).map_err(|e| e.to_string())?;
-    win.set_resizable(!locked).map_err(|e| e.to_string())?;
-    set_lyrics_mouse_passthrough(&app, locked)?;
+    if let Err(error) = win.set_always_on_top(true) {
+        eprintln!("[lyrics] 显示时设置置顶失败: {error}");
+    }
+    if let Err(error) = win.set_resizable(!locked) {
+        eprintln!("[lyrics] 显示时设置可调整大小失败: {error}");
+    }
+    if let Err(error) = set_lyrics_mouse_passthrough(&app, locked) {
+        eprintln!("[lyrics] 显示时设置鼠标穿透失败: {error}");
+    }
     win.show().map_err(|e| e.to_string())?;
     if locked {
         watch_lyrics_hover(app.clone());
@@ -379,6 +518,12 @@ fn is_lyrics_window_open(app: tauri::AppHandle) -> bool {
 /// Ctrl+Alt+D 必须在主窗口隐藏后继续生效，因此由原生快捷键回调直接切换歌词窗，
 /// 不再依赖主窗口 WebView 的生命周期。不使用 Ctrl+D，避免抢占 Excel 等应用的常用快捷键。
 fn toggle_lyrics_window_from_shortcut(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<LyricsWindowState>() {
+        if !accept_debounced_shortcut(&state.last_lyrics_shortcut) {
+            return;
+        }
+    }
+
     let result = if is_lyrics_window_open(app.clone()) {
         close_lyrics_window(app.clone())
     } else {
@@ -411,15 +556,38 @@ fn set_lyrics_window_locked(app: tauri::AppHandle, locked: bool) -> Result<bool,
     let win = app
         .get_webview_window(LYRICS_LABEL)
         .ok_or_else(|| "歌词窗口未初始化".to_string())?;
-    // 歌词窗无论是否锁定都必须保持置顶；锁定只控制交互、移动和缩放。
-    win.set_always_on_top(true).map_err(|e| e.to_string())?;
-    win.set_resizable(!locked).map_err(|e| e.to_string())?;
+    // 先记下锁定状态再改窗口属性：置顶 / 缩放 / 穿透在隐藏窗口或非主线程上
+    // 可能失败，但不能因此把状态回滚，否则快捷键会表现为时灵时不灵。
     if let Some(state) = app.try_state::<LyricsWindowState>() {
         *state.locked.lock().unwrap() = locked;
     }
-    set_lyrics_mouse_passthrough(&app, locked)?;
+
+    let visible = win.is_visible().unwrap_or(false);
+    // 歌词窗无论是否锁定都必须保持置顶；锁定只控制交互、移动和缩放。
+    if let Err(error) = win.set_always_on_top(true) {
+        eprintln!("[lyrics] 设置置顶失败: {error}");
+    }
+    if let Err(error) = win.set_resizable(!locked) {
+        eprintln!("[lyrics] 设置可调整大小失败: {error}");
+    }
+    if let Err(error) = set_lyrics_mouse_passthrough(&app, locked) {
+        eprintln!("[lyrics] 设置鼠标穿透失败: {error}");
+        let retry_app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(40));
+            let still_locked = retry_app
+                .try_state::<LyricsWindowState>()
+                .map(|state| *state.locked.lock().unwrap())
+                .unwrap_or(locked);
+            if still_locked == locked {
+                if let Err(retry_error) = set_lyrics_mouse_passthrough(&retry_app, locked) {
+                    eprintln!("[lyrics] 重试鼠标穿透仍失败: {retry_error}");
+                }
+            }
+        });
+    }
     let _ = app.emit("lyrics:lock-state", locked);
-    if locked {
+    if locked && visible {
         watch_lyrics_hover(app);
     }
     Ok(locked)
@@ -431,10 +599,15 @@ fn is_lyrics_window_locked(state: State<LyricsWindowState>) -> bool {
 }
 
 fn toggle_lyrics_window_lock_from_shortcut(app: &tauri::AppHandle) {
-    let next_locked = app
-        .try_state::<LyricsWindowState>()
-        .map(|state| !*state.locked.lock().unwrap())
-        .unwrap_or(true);
+    let next_locked = match app.try_state::<LyricsWindowState>() {
+        Some(state) => {
+            if !accept_debounced_shortcut(&state.last_lock_shortcut) {
+                return;
+            }
+            !*state.locked.lock().unwrap()
+        }
+        None => true,
+    };
 
     match set_lyrics_window_locked(app.clone(), next_locked) {
         Ok(locked) => eprintln!(
@@ -505,6 +678,8 @@ pub fn run() {
             app.manage(LyricsWindowState {
                 locked: Mutex::new(true),
                 mouse_passthrough: Mutex::new(false),
+                last_lyrics_shortcut: Mutex::new(None),
+                last_lock_shortcut: Mutex::new(None),
             });
 
             app.handle().plugin(
@@ -514,20 +689,44 @@ pub fn run() {
                             return;
                         }
 
-                        if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyD) {
-                            toggle_lyrics_window_from_shortcut(app);
-                        } else if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyL) {
-                            toggle_lyrics_window_lock_from_shortcut(app);
+                        // 热键回调跑在 global-hotkey 自己的窗口线程上，Windows 上直接
+                        // 改 WebView 属性会偶发失败。必须切回主线程再动歌词窗。
+                        let toggle_window = shortcut
+                            .matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyD);
+                        let toggle_lock = shortcut
+                            .matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyL);
+                        if !toggle_window && !toggle_lock {
+                            return;
+                        }
+
+                        let app = app.clone();
+                        if let Err(error) = app.clone().run_on_main_thread(move || {
+                            if toggle_window {
+                                toggle_lyrics_window_from_shortcut(&app);
+                            } else {
+                                toggle_lyrics_window_lock_from_shortcut(&app);
+                            }
+                        }) {
+                            eprintln!("[shortcuts] 无法切回主线程: {error}");
                         }
                     })
                     .build(),
             )?;
 
+            let mut hook_d = false;
+            let mut hook_l = false;
             for shortcut in ["CTRL+ALT+D", "CTRL+ALT+L"] {
                 if let Err(error) = app.global_shortcut().register(shortcut) {
                     eprintln!("[shortcuts] 注册 {shortcut} 失败: {error}");
+                    if shortcut.ends_with('D') {
+                        hook_d = true;
+                    } else {
+                        hook_l = true;
+                    }
                 }
             }
+            #[cfg(windows)]
+            lyrics_hotkey_hook::install(app.handle().clone(), hook_d, hook_l);
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(
