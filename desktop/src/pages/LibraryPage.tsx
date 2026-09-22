@@ -16,7 +16,7 @@ import { useAuthStore } from '@/store/authStore'
 import { showToast } from '@/utils/toast'
 import {
   Search, Disc3, MicVocal, Film, Trophy,
-  Play, Loader, Headphones, User, Radio, Plus, X,
+  Play, Loader, Headphones, User, Radio, Plus, X, Disc,
 } from 'lucide-react'
 
 type LibraryTab = 'artist' | 'playlist' | 'album' | 'mv' | 'dj' | 'toplist'
@@ -476,7 +476,7 @@ export default function LibraryPage() {
   const tabs: { key: LibraryTab; label: string; icon: typeof Disc3 }[] = [
     { key: 'playlist', label: '歌单广场', icon: Disc3 },
     { key: 'artist', label: '歌手', icon: MicVocal },
-    { key: 'album', label: '新碟上架', icon: Disc3 },
+    { key: 'album', label: '新碟上架', icon: Disc },
     { key: 'mv', label: 'MV 精选', icon: Film },
     { key: 'dj', label: '电台', icon: Radio },
     { key: 'toplist', label: '排行榜', icon: Trophy },

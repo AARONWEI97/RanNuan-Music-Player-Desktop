@@ -310,7 +310,7 @@ export function startPlayerBridge() {
         lyricsOpen = e.payload
         pushPlayerState(true, true)
       })
-      listen<number>(EVT_VIEWERS, (e) => {
+    listen<number>(EVT_VIEWERS, (e) => {
       consumers = e.payload ?? 0
       // 当所有副窗口都不可见时，向 Rust 确认一次歌词窗真实状态，
       // 而不是粗暴地把 lyricsOpen 设为 false。
@@ -319,6 +319,17 @@ export function startPlayerBridge() {
       if (consumers === 0) {
         syncLyricsState().then(() => pushPlayerState(true, true))
       }
+    })
+
+    // setup 阶段可能早于主窗口桥注册就已经发过 panel:viewers；
+    // 主动查询一次，避免副窗口拿到 loading 快照后再也收不到清除状态。
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<number>('panel_viewer_count')
+        .then((count) => {
+          consumers = count ?? 0
+          pushPlayerState(true, true)
+        })
+        .catch(() => {})
     })
   })
 

@@ -56,7 +56,7 @@ desktop/
 │   │   │   ├── FloatingLyrics.tsx ← 桌面悬浮歌词
 │   │   │   ├── GlobalSearch.tsx    ← 全局搜索弹窗
 │   │   │   ├── KeepAlive.tsx      ← 路由 & Tab 级缓存（页面+tab切走不销毁）
-│   │   │   └── MiniPlayer.tsx     ← 迷你播放器
+│   │   │   └── MiniPlayer.tsx     ← 浮动迷你窗（非 Windows / 任务栏条失败时的回退）
 │   │   └── common/
 │   │       ├── SongRow.tsx        ← 通用歌曲列表行（右键菜单8项：播放/下一首/收藏/歌手/专辑/详情/下载/相似/评论/删歌单/音源）
 │   │       ├── ContextMenu.tsx    ← 右键菜单渲染组件
@@ -71,6 +71,10 @@ desktop/
 │   │       └── SplashScreen.tsx   ← 启动动画（马卡龙配色 + 3D Logo + 狗狗叫声）
 │   │   └── player/
 │   │       └── SourceSelector.tsx  ← 音源选择弹窗（bodian/QQ/咪咕/酷狗/酷我/网易/GD 多音源切换）
+│   ├── windows/
+│   │   ├── TrayPanelApp.tsx       ← 托盘自绘控制面板（无音频）
+│   │   ├── LyricsWindowApp.tsx    ← 独立桌面歌词窗（无音频）
+│   │   └── TaskbarMiniApp.tsx     ← Windows 任务栏迷你播放条（无音频）
 │   ├── pages/                ← 页面级组件
 │   │   ├── HomePage.tsx      ← 首页（Banner轮播/快捷入口/推荐歌单/热门歌手/新碟上架/推荐新歌）
 │   │   ├── SearchPage.tsx    ← 搜索页（防抖建议 + 热搜卡片 + 历史记录 + Ctrl+K 聚焦 + 键盘导航）
@@ -126,9 +130,11 @@ desktop/
 ├── src-tauri/                ← Rust 后端
 │   ├── src/
 │   │   ├── main.rs           ← Tauri 主进程入口
-│   │   └── lib.rs            ← 应用构建 + 系统托盘设置
+│   │   ├── lib.rs            ← 应用构建 + 系统托盘 + 副窗口预创建
+│   │   └── taskbar_mini.rs   ← Windows 任务栏迷你条宿主（几何、显隐、主题）
 │   ├── capabilities/
-│   │   └── default.json      ← Tauri 权限配置（窗口控制/托盘/迷你模式）
+│   │   ├── default.json      ← 主窗口权限
+│   │   └── panel.json        ← 副窗口权限（tray-panel / lyrics / taskbar-mini）
 │   ├── Cargo.toml            ← Rust 依赖（tauri + tray-icon feature）
 │   └── tauri.conf.json       ← Tauri 配置（隐藏系统标题栏/最小窗口尺寸）
 ├── vite.config.ts            ← Vite 配置（React + @shared alias）
@@ -252,12 +258,9 @@ desktop/
 ### UI 布局
 - [x] 自定义标题栏（隐藏系统标题栏，最小化/最大化/关闭 + 自定义 Logo）
 - [x] 左侧导航栏（首页/搜索/排行榜/音乐库/我喜欢/最近播放/本地音乐/下载管理/宇宙相册/设置 + 自定义 Logo + 用户/主题切换 + 深色模式 class 策略修复）
-- [x] 底部播放器栏（歌曲信息/控制/拖拽进度条/hover时间预览/滚轮音量/静音切换/队列按钮/歌词按钮/音源切换/迷你模式/播放速率/收藏）
-- [x] 迷你播放器模式（Tauri 窗口缩放，360×72，窗口置顶，不可调整大小，点击恢复全窗口）
-- [x] 迷你播放器收藏/取消收藏（实时同步，Toast 反馈）
-- [x] 迷你播放器音量控制（滚轮/滑块/静音切换）
-- [x] 迷你播放器可点击进度条（点击跳转 + 悬停时间预览）
-- [x] 迷你播放器播放列表展开（点击展开/收起，列表项切歌/删除）
+- [x] 底部播放器栏（歌曲信息/控制/拖拽进度条/hover时间预览/滚轮音量/静音切换/队列按钮/歌词按钮/音源切换/任务栏迷你/播放速率/收藏）
+- [x] **任务栏迷你播放条（Windows）**：PlayBar 最右侧按钮在系统任务栏「小组件」（天气预报）右侧放一条宽 300 DIP 的播放条，高度与任务栏一致。点芯片本体：主窗口正在显示且未最小化就藏到托盘，否则打开。播放中边框是一条不闪的 1 像素红线，进度是直线，已播部分有一道慢高光，尽头一个静止小白点；暂停后高光停住，边框回到灰线。开关记在 `taskbar-mini.json`。任务栏自动隐藏或全屏时暂时让开，不关掉开关。图标左对齐、左侧放不下时退到时钟托盘左边。位置固定，不能拖。非 Windows 或初始化失败时回退 360×72 浮动迷你窗。Windows 11 已移除 AudioBand 的 Deskband，所以这是盖在任务栏上的置顶透明窗，不是 explorer 插件。详见第三十四节
+- [x] 浮动迷你窗（非 Windows，或任务栏条初始化失败时的回退）：主窗口缩到 360×72，置顶；收藏、音量、进度、播放列表展开仍可用
 - [x] 播放列表展开时窗口动态变高（360×400）
 - [x] 歌曲详情页（点击底部播放器进入，音乐百科/歌词/评论/相似 tab 支持 URL 深链）
 - [x] 歌曲详情页切歌后同步 URL，PlayBar 封面和返回按钮仍可一键关闭详情页
@@ -338,8 +341,11 @@ desktop/
 | `Ctrl + K` | 聚焦搜索框（搜索页） |
 | `Ctrl + Shift + S` | 打开全局搜索弹窗 |
 | `Esc` | 关闭弹窗/抽屉 |
-| 点击播放器底部迷你按钮 | 进入迷你模式（窗口缩小到 360×72） |
-| 迷你模式下点击恢复按钮 | 退出迷你模式（窗口恢复原始尺寸） |
+| 点击播放器底部任务栏按钮 | Windows：在系统任务栏小组件右侧显示 / 移除迷你播放条。其他系统：进入 360×72 迷你窗 |
+| 点击任务栏播放条空白处 / 封面 / 歌名 | 主窗口在就藏到托盘，不在或已最小化就打开（320ms 内连点只算一次） |
+| 任务栏条上的上一首 / 播放 / 下一首 / 收藏 / X | 控制播放，或把这条从任务栏移除。这些按钮不会切换主窗口 |
+| 在任务栏条上滚动滚轮 | 音量 ±0.05 |
+| 点击任务栏条底部进度 | 按点击位置跳转 |
 | 媒体键 ▶️⏸️ | 播放 / 暂停（系统级） |
 | 媒体键 ⏭️ | 下一首（系统级） |
 | 媒体键 ⏮️ | 上一首（系统级） |
@@ -2344,16 +2350,19 @@ Rust ──emit──► "panel:viewers"        （可见副窗口数，0 时主
 Rust ──emit──► "panel:request-state"  （副窗口 show 前索要全量快照）
 ```
 
-### 30.4 单 HTML 入口，按 query 分流
+### 30.4 单 HTML 入口，按 hash 分流
 
-不新增 HTML 文件。副窗口由 Rust 以 `index.html?w=xxx` 创建，`main.tsx` 顶部分流：
+不新增 HTML 文件。副窗口由 Rust 以 `index.html#xxx` 创建，`main.tsx` 顶部分流：
 
 ```
 main.tsx
- ├─ ?w=tray-panel → <TrayPanelApp />     // 纯视图，无 audio/session/shortcuts
- ├─ ?w=lyrics     → <LyricsWindowApp />
+ ├─ #tray-panel   → <TrayPanelApp />      // 纯视图，无 audio/session/shortcuts
+ ├─ #lyrics       → <LyricsWindowApp />
+ ├─ #taskbar-mini → <TaskbarMiniApp />    // 见第三十四节；不要加 transparent-window
  └─ (默认)         → <App />              // 主窗口，唯一持有 audio
 ```
+
+**不要改回 query。** `WebviewUrl::App` 内部是 `PathBuf`，Windows 上 `?` 会被当成文件名字符，query 传不到前端。副窗口读不到标记就会加载完整 `App`，再创建一个 `HTMLAudioElement`。hash 不参与路径解析，dev 和打包后都稳。
 
 **关键**：`restoreSession` / `useGlobalShortcuts` / `useTrayEvents` / `audioService`
 绝不能在副窗口执行，否则会出现两个 audio 实例互相打架。
@@ -2386,7 +2395,7 @@ Rust 会临时恢复输入以展示控制条，离开后重新启用穿透。解
 | `services/panelClient.ts` | **新建** | 副窗口侧：`usePlayerSnapshot` / `sendCmd` / `resizeSelf`；带 `&mock=1` 浏览器预览假数据 |
 | `windows/TrayPanelApp.tsx` | **新建** | 面板 UI |
 | `windows/LyricsWindowApp.tsx` | **新建** | 独立桌面歌词窗 |
-| `main.tsx` | 重写 | 按 `?w=` 分流三个入口 |
+| `main.tsx` | 重写 | 按 hash 分流入口（后补 `#taskbar-mini`，见第三十四节） |
 | `App.tsx` | 修改 | 挂载 `startPlayerBridge()` |
 | `components/layout/FloatingLyrics.tsx` | 重写 | 兼容现有布局结构的空组件，返回 `null` |
 | `hooks/useGlobalShortcuts.ts` | 修改 | 仅注册媒体键；歌词快捷键由 Rust 原生层负责 |
@@ -2411,9 +2420,11 @@ Rust 会临时恢复输入以展示控制条，离开后重新启用穿透。解
 方便调样式（仅 dev 生效，生产构建会被摇树掉）：
 
 ```
-http://localhost:5173/index.html?w=tray-panel&mock=1
-http://localhost:5173/index.html?w=lyrics&mock=1
+http://localhost:5173/index.html?mock=1#tray-panel
+http://localhost:5173/index.html?mock=1#lyrics
 ```
+
+`mock` 仍读 query；窗口种类看 hash。任务栏条没有这套假数据，样式要在实机任务栏上看。
 
 ### 30.9 验证状态
 
@@ -2662,3 +2673,122 @@ WebView2 上 **Canvas/WebGL 和硬件视频解码会互抢**。影院能播，�
 | 样式 | `index-O9yNqPfw.css` |
 
 改 RanRan 后仍走 §31.5：`npm run build` → 拷 `dist` 到 `public/ranran` → 改 `build=`。只改宇宙前端时，切走再进 `/universe` 通常够；改了 `src-tauri` 必须整进程重启。
+
+---
+
+## 三十四、Windows 任务栏迷你播放条（2026-09-22）
+
+> PlayBar 最右侧按钮在 Windows 上不再把主窗口缩成 360×72，而是在系统任务栏里放一条播放条。
+> 非 Windows，或这条初始化失败时，仍走原来的 `MiniPlayer`。不要删 `MiniPlayer.tsx`。
+
+### 34.1 为什么不是 AudioBand 那种插件
+
+AudioBand 用的是 explorer 进程里的 Deskband（`IDeskBand`）。Windows 11 把任务栏换成 XAML 之后，不再挂第三方工具条。跨进程 `SetParent` 到 `Shell_TrayWnd` 也立不住。
+
+现在的做法：`setup` 里预建一个置顶、无边框、不进任务栏、背景全透明的窗口，按任务栏槽位盖在「小组件」按钮右边。它看起来嵌在任务栏里，但不是 explorer 插件。
+
+**必须在 `setup` 里预建。** Windows 上运行时再开第二个 WebView2，会撞上 `Chrome_WidgetWin_0` 类注册错误 1411。标签是 `taskbar-mini`，地址是 `index.html#taskbar-mini`。
+
+### 34.2 摆在哪
+
+目标宽度 **300 DIP**，再窄也不低于 **200 DIP**（大约还能留下 150）。高度跟任务栏一样。竖着的任务栏用高度 156 / 最低 120 DIP，宽度跟任务栏一样。
+
+小组件按钮没有自己的 HWND，用 UI Automation 在 `Shell_TrayWnd` 里按 `AutomationId = WidgetsButton` 找，读 `CurrentBoundingRectangle`。结果按相对任务栏原点缓存约 1.5 秒。PowerShell 的 UI Automation 是 DPI 无关的，报出来的矩形可能和 Win32 物理像素对不上；矩形若不落在任务栏上，就按高度比（约 1.15–3.5）映射回去。远边若已经过了任务栏中点，当没找到。
+
+水平任务栏：
+
+1. 优先贴在小组件右缘再空 4 像素，并且停在图标簇左边 8 像素之前。
+2. 这块空地放不下最低宽度时（图标左对齐），退到图标和时钟托盘之间，贴着托盘，不盖住图标。
+
+位置锁死。`taskbar_mini_nudge` 是空操作，前端不要再做拖动。偏好文件仍是 `app_config_dir/taskbar-mini.json`（这台机器上是 `%APPDATA%\com.rannuan.music\taskbar-mini.json`），字段 `{ enabled, anchor }`。`anchor` 只是旧数据，**不参与摆放**。
+
+### 34.3 开、关、让路
+
+| 操作 | 行为 |
+|------|------|
+| PlayBar 最右侧按钮 / 条上的 X | 切换 `wants_open`，并写入 `enabled` |
+| 点封面、歌名或空白处 | `toggle_main_window`：主窗口可见且未最小化 → `hide()`（和标题栏关闭一样，音频继续，托盘还在）；否则收起托盘面板再把主窗口叫出来。320ms 内连点只算一次 |
+| 上一首 / 播放 / 下一首 / 收藏 / 点进度 | `stopPropagation`，只发播放命令 |
+| 滚轮 | 音量 ±0.05 |
+| 任务栏自动隐藏（和屏幕重叠不到一半厚度，或不到 16 像素） | 暂时 `SW_HIDE`，**不**清 `wants_open` |
+| 别的程序全屏盖住这块屏幕 | 同样暂时藏起。自己进程的窗口、Progman、WorkerW、任务栏、溢出通知不算全屏 |
+| 系统对这个窗口发 `CloseRequested` | `prevent_close()` 然后 `hide()`。**禁止**在这里 `set_open(false)` |
+
+最后一条是踩过的坑：退出进程时系统也会关这个无边框窗口。若那时把 `enabled` 写成 false，下次启动条就没了，看起来像界面改坏了。
+
+`is_taskbar_mini_open` 和事件 `taskbar-mini:visible` 表示的是开关，不是「此刻被自动隐藏挡住」。PlayBar 按钮在开关开着时保持红色，包括暂时让路的时候。
+
+观众数只在这条 **操作系统层面可见** 时把它算进去。它重新露出来时发 `panel:request-state`，主窗口才继续广播 `player:state`。主窗口关到托盘后进程还在，这条也还在。
+
+显隐细节：
+
+- 用户主动打开用 Tauri `show()`。自动恢复用 `ShowWindow(SW_SHOWNOACTIVATE)`，避免抢焦点。
+- 藏起来要先原生 `SW_HIDE`，再 `hide()`。tao 发现 `VISIBLE` 已经是 false 时会把 `hide()` 当成无操作。
+- 开着的时候大约每 150ms `SetWindowPos(HWND_TOPMOST)` 抬一次。任务栏自己也是置顶的，不抬会被 XAML 任务栏盖住。关着时看门狗改成约 700ms。
+- 窗口角用 `DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND)` 保持方的。圆角是芯片自己的 CSS（6px），不是整窗裁切。
+
+### 34.4 前端只是一块视图
+
+`TaskbarMiniApp` 不创建音频。快照用 `panelClient.usePlayerSnapshot`，命令走 `taskbar_mini_command`：Rust 校验后再 `emit("panel:cmd")`。WebView2 跨 webview 的 `emit` 会丢，所以不能让这条自己直接对主窗口发事件。
+
+允许的命令：`toggle-play`、`next`、`prev`、`toggle-fav`、`seek`（`ms` 为 f64）、`set-volume`（`volume` 为 f64）。
+
+主题等 Rust 的 `taskbar_mini_chrome`（以及事件 `taskbar-mini:chrome`）到了再画。来源是注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\SystemUsesLightTheme`。没等到之前渲染一块空的全尺寸 div，避免先闪一帧错主题。
+
+根节点 class 是 `taskbar-mini`，**不要**加成 `transparent-window`。那个 class 有 22px 圆角和 `clip-path`，会把贴着任务栏的条切掉一圈。
+
+非 Windows 的 Rust stub 返回含「仅支持 Windows」的错误。`Layout.toggleMini` 看到这句就不弹 Toast，直接进入 360×72。其它 Windows 失败才 Toast「任务栏迷你播放不可用 / 已改用窗口内迷你模式」，然后同样回退。
+
+### 34.5 播放时怎么画，以及什么改法会把条画没
+
+芯片是普通文档流里的 `w-full h-full`，外层留 2px。底色要够实，透明 WebView2 上才会看见：
+
+| | 平时 | 悬停 |
+|--|------|------|
+| 浅色任务栏 | `rgba(255,255,255,0.88)` | `0.94` |
+| 深色任务栏 | `rgba(22,22,22,0.88)` | `rgba(32,32,32,0.92)` |
+
+边框是真正的 `1px solid`。正在播放且不在加载：`rgba(230,0,38,0.55)`。否则是一条安静的灰线。只过渡 `border-color`，**不要**做明暗呼吸。
+
+进度是底部 2px 直线，颜色 `#b00020 → #e60026 → #ff7a93`。正在播放且已播超过 4% 时，填充内部有一道 `translateX` 高光（`taskbar-sheen`，约 4.2s）。尽头是 4px 白点，不闪。暂停后高光不再走，白点停在原地。`prefers-reduced-motion: reduce` 时去掉高光动画。
+
+**不要再做这些：**
+
+1. 在半透明底后面铺一层会呼吸的渐变。整块芯片会跟着闪，喧宾夺主。
+2. 把 `box-shadow` 或 `opacity` 动画加在芯片那一层，同时把底色改得很透。透明窗口上往往什么都画不出来，任务栏上就像条消失了。出问题的就是这一版，不是摆放逻辑。
+3. 只有绝对定位、没有正常流尺寸的芯片，再配上几乎全透明的底。
+
+进度高光只许发生在已播填充的内部，用 `transform`。芯片本身的透明度和阴影保持静止。
+
+### 34.6 文件
+
+| 路径 | 职责 |
+|------|------|
+| `src-tauri/src/taskbar_mini.rs` | 几何、UIA、显隐、主题、偏好、非 Windows stub、单测 |
+| `src-tauri/src/lib.rs` | `install`、`toggle_main_window`、把 `taskbar-mini` 算进观众 |
+| `src-tauri/capabilities/panel.json` | `windows` 含 `taskbar-mini`。自定义命令沿用现有歌词命令的方式，没有按条 ACL |
+| `src/windows/TaskbarMiniApp.tsx` | 芯片 UI |
+| `src/main.tsx` | `#taskbar-mini` 分支，动态 import，不加载 `App` |
+| `src/index.css` | `.taskbar-mini` 透明且不裁圆角；只留 `taskbar-sheen` |
+| `src/components/layout/Layout.tsx` | 按钮调用 `toggle_taskbar_mini`，失败再回退缩小窗口 |
+| `src/components/layout/PlayerBar.tsx` | 最右侧按钮，固定时变红 |
+| `src/components/layout/MiniPlayer.tsx` | 保留。非 Windows 和失败回退 |
+| `src/services/panelClient.ts` | `sendTaskbarCommand`、`toggleMainWindow` |
+
+`Cargo.toml` 除了原来的 `windows-sys`，还用 `windows` 0.61 的 `Win32_System_Com` / `Ole` / `Variant` / `Win32_UI_Accessibility` 做 UIA。`VARIANT` 没有 `From<&str>`，BSTR 条件要自己装，用完 `VariantClear`。
+
+### 34.7 单测覆盖的几何
+
+`desktop/src-tauri` 下 `cargo test --lib taskbar_mini`：
+
+| 用例 | 断言 |
+|------|------|
+| 居中图标的任务栏 | 贴在小组件右侧，宽 300，右缘不超过开始按钮，高等于任务栏 |
+| 图标左对齐 | 退到托盘左边，不盖图标 |
+| UIA 虚拟化矩形 | 按高度比映射回物理任务栏，远边仍在前半段 |
+| 任务栏几乎缩进屏幕外 | 不显示 |
+| 上 / 下 / 左停靠 | 边跟任务栏走 |
+| 本机有小组件时 | 它的远边在任务栏前半段；没有任务栏则跳过 |
+
+实机要点过的路径（按钮、点击切换主窗口、自动隐藏）无法用浏览器代点，改完要在 Windows 任务栏上自己看一眼。改了 `src-tauri` 必须整进程重启；只改 `TaskbarMiniApp.tsx` / `index.css` 时，这条 webview 也要重新加载才会变。
+

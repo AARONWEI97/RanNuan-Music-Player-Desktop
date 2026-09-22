@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { usePlayerStore, usePlaylistStore, useSettingsStore } from '@shared'
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, Minimize2, Gauge, Heart, Loader2, PawPrint } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, PanelBottom, Gauge, Heart, Loader2, PawPrint } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume, setPlaybackRate } from '@/services/audioService'
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
@@ -16,9 +16,12 @@ function fmtMs(ms: number) {
   return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 }
 
-interface PlayerBarProps { onMiniMode?: () => void }
+interface PlayerBarProps {
+  onMiniMode?: () => void
+  miniDocked?: boolean
+}
 
-export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
+export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const theme = useSettingsStore((s) => s.theme)
@@ -352,11 +355,13 @@ export default function PlayerBar({ onMiniMode }: PlayerBarProps) {
           </div>
         </div>
 
-        {/* mini mode */}
+        {/* 任务栏迷你条。非 Windows 会回退成原来的浮动迷你窗。 */}
         {onMiniMode && (
-          <button onClick={onMiniMode} title="迷你模式"
-            className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04] ml-0.5">
-            <Minimize2 className="w-[17px] h-[17px]" />
+          <button onClick={onMiniMode} title={miniDocked ? '从任务栏移除' : '固定到任务栏'}
+            className={`p-1.5 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04] ml-0.5 ${
+              miniDocked ? 'text-[#e60026]' : 'text-gray-400 dark:text-gray-500 hover:text-[#e60026]'
+            }`}>
+            <PanelBottom className="w-[17px] h-[17px]" />
           </button>
         )}
       </div>

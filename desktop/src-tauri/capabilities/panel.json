@@ -4,7 +4,8 @@
   "description": "托盘控制面板 / 桌面歌词副窗口的最小权限集",
   "windows": [
     "tray-panel",
-    "lyrics"
+    "lyrics",
+    "taskbar-mini"
   ],
   "permissions": [
     "core:event:default",

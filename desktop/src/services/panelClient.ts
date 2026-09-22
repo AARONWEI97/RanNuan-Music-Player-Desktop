@@ -182,6 +182,32 @@ export function resizeSelf(height: number) {
 /** 面板宽度，与 lib.rs 的 PANEL_W 保持一致 */
 const PANEL_WIDTH = 340
 
+/** 任务栏迷你条的播放命令走 Rust 中继，避免副窗口之间直接 emit 丢消息。 */
+export async function sendTaskbarCommand(cmd: PanelCommand) {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('taskbar_mini_command', { command: cmd })
+}
+
+/** 沿任务栏拖动。位置已固定在小组件旁边，调用会被忽略。 */
+export function nudgeTaskbarMini(dx: number, dy: number) {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('taskbar_mini_nudge', { dx, dy }))
+    .catch((e) => console.error('[taskbar-mini] nudge 失败:', e))
+}
+
+export function endTaskbarMiniDrag() {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('taskbar_mini_end_drag'))
+    .catch((e) => console.error('[taskbar-mini] end drag 失败:', e))
+}
+
+/** 主窗口正在显示就隐藏，否则显示。给任务栏小组件用。 */
+export function toggleMainWindow() {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('toggle_main_window'))
+    .catch((e) => console.error('[taskbar-mini] toggle main 失败:', e))
+}
+
 /** 调用主进程命令（显示主窗口 / 退出应用） */
 export function invokeMain(cmd: 'show_main_window' | 'quit_app') {
   import('@tauri-apps/api/core')

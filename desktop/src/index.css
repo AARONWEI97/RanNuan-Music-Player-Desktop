@@ -175,6 +175,223 @@ body.transparent-window #root {
   clip-path: inset(0 round 22px);
 }
 
+html.taskbar-mini,
+body.taskbar-mini,
+body.taskbar-mini #root {
+  background: transparent !important;
+  border-radius: 0 !important;
+  overflow: hidden;
+  clip-path: none;
+}
+
+/* 任务栏迷你播放条：固定尺寸的芯片，动效只发生在内容层和波浪进度上。 */
+.taskbar-chip {
+  border-radius: 9px;
+  isolation: isolate;
+  transition: background-color 160ms ease, border-color 220ms ease;
+}
+
+.taskbar-atmosphere {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    linear-gradient(112deg, transparent 12%, color-mix(in srgb, var(--taskbar-accent) 13%, transparent) 48%, transparent 82%),
+    linear-gradient(290deg, transparent 20%, rgba(255, 255, 255, 0.08) 50%, transparent 78%);
+  background-size: 180% 100%, 160% 100%;
+  background-position: 110% 0, -70% 0;
+}
+
+.taskbar-chip > :not(.taskbar-atmosphere):not(.taskbar-wave) {
+  position: relative;
+  z-index: 1;
+}
+
+/* The wave is a bottom overlay, not a flex content item. */
+.taskbar-chip > .taskbar-wave {
+  position: absolute;
+  z-index: 2;
+}
+
+.taskbar-chip.is-playing .taskbar-atmosphere {
+  animation: taskbar-atmosphere-drift 7s ease-in-out infinite alternate;
+}
+
+.taskbar-icon-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.taskbar-icon-btn:hover {
+  background: var(--taskbar-hover);
+  transform: translateY(-1px);
+}
+
+.taskbar-transport > .taskbar-icon-btn.is-primary {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  color: #fff !important;
+  background: var(--taskbar-accent, #b86f58);
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--taskbar-accent, #b86f58) 36%, transparent);
+}
+
+.taskbar-transport > .taskbar-icon-btn.is-primary:hover {
+  filter: saturate(1.08) brightness(1.04);
+  transform: scale(1.06);
+}
+
+.taskbar-cover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 7px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.taskbar-cover.is-playing {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--taskbar-accent, #b86f58) 70%, transparent), 0 0 9px color-mix(in srgb, var(--taskbar-accent, #b86f58) 32%, transparent);
+}
+
+.taskbar-title,
+.taskbar-artist,
+.taskbar-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.taskbar-time {
+  font-size: 9px;
+  letter-spacing: 0;
+  opacity: 0.86;
+}
+
+.taskbar-mini-bars {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.taskbar-mini-bars i {
+  width: 2px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--taskbar-accent, #b86f58);
+  transform-origin: center;
+}
+
+.taskbar-chip.is-playing .taskbar-mini-bars i {
+  animation: taskbar-bar-bounce 850ms ease-in-out infinite alternate;
+}
+
+.taskbar-wave {
+  height: 15px;
+  z-index: 2;
+  touch-action: none;
+}
+
+.taskbar-wave svg {
+  display: block;
+  width: 100%;
+  height: 16px;
+  overflow: visible;
+}
+
+.taskbar-wave path {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.taskbar-wave-track {
+  opacity: 0.8;
+}
+
+.taskbar-wave-fill {
+  stroke: var(--taskbar-accent, #b86f58);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--taskbar-accent, #b86f58) 45%, transparent));
+}
+
+.taskbar-wave-glint {
+  stroke: rgba(255,255,255,0.82);
+  stroke-width: 1.15;
+  stroke-dasharray: 10 26;
+  animation: taskbar-wave-glint 2.8s linear infinite;
+}
+
+.taskbar-wave-dot {
+  fill: #fff;
+  stroke: var(--taskbar-accent, #b86f58);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--taskbar-accent, #b86f58) 64%, transparent));
+  transition: r 120ms ease;
+}
+
+.taskbar-wave-caption {
+  position: absolute;
+  right: 2px;
+  bottom: 13px;
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.taskbar-wave:hover .taskbar-wave-caption,
+.taskbar-wave.is-seeking .taskbar-wave-caption {
+  opacity: 0.9;
+}
+
+@keyframes taskbar-atmosphere-drift {
+  from { background-position: 110% 0, -70% 0; }
+  to { background-position: -20% 0, 120% 0; }
+}
+
+@keyframes taskbar-bar-bounce {
+  from { transform: scaleY(0.65); }
+  to { transform: scaleY(1.45); }
+}
+
+@keyframes taskbar-wave-glint {
+  from { stroke-dashoffset: 42; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* 保留旧类名，避免旧热更新页面出现无样式的高光。 */
+@keyframes taskbar-sheen {
+  from { transform: translateX(-130%); }
+  to { transform: translateX(480%); }
+}
+
+.taskbar-sheen {
+  animation: taskbar-sheen 4.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taskbar-sheen {
+    animation: none;
+  }
+
+  .taskbar-chip.is-playing .taskbar-atmosphere,
+  .taskbar-chip.is-playing .taskbar-mini-bars i,
+  .taskbar-wave-glint {
+    animation: none;
+  }
+}
+
 /* 马卡龙流体 blob 漂移 — 与 SplashScreen 同源，提取为全局供面板复用 */
 @keyframes blobFloat1 {
   0%, 100% { transform: translate(0, 0) scale(1); }

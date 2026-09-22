@@ -16,6 +16,7 @@ import ToastContainer from '@/components/common/Toast'
 import ContextMenu from '@/components/common/ContextMenu'
 import AddToPlaylistModal from '@/components/common/AddToPlaylistModal'
 import DownloadProgressToast from '@/components/common/DownloadProgressToast'
+import { showToast } from '@/utils/toast'
 
 const MINI_WIDTH = 360
 const MINI_HEIGHT = 72
@@ -33,7 +34,31 @@ export default function Layout({ children }: { children: ReactNode }) {
   useGlobalShortcuts()
   const { menu } = useContextMenu()
   const [isMiniPlayer, setIsMiniPlayer] = useState(false)
+  const [taskbarDocked, setTaskbarDocked] = useState(false)
   const savedWindowState = useRef<SavedWindowState | null>(null)
+
+  useEffect(() => {
+    if (!isTauri()) return
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<boolean>('is_taskbar_mini_open')
+        .then((open) => { if (!disposed) setTaskbarDocked(open) })
+        .catch(() => {})
+    })
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen<boolean>('taskbar-mini:visible', (event) => {
+        setTaskbarDocked(!!event.payload)
+      }).then((fn) => {
+        if (disposed) fn()
+        else unlisten = fn
+      })
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -141,6 +166,24 @@ export default function Layout({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Windows 把迷你播放条嵌进任务栏；其他系统或初始化失败时回退成缩小主窗口。
+  const toggleMini = useCallback(async () => {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke<boolean>('toggle_taskbar_mini')
+        return
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (!msg.includes('仅支持 Windows')) {
+          showToast('任务栏迷你播放不可用', '已改用窗口内迷你模式')
+        }
+      }
+    }
+    if (isMiniPlayer) await exitMiniMode()
+    else await enterMiniMode()
+  }, [isMiniPlayer, enterMiniMode, exitMiniMode])
+
   // 迷你模式下播放列表展开/收起时调整窗口高度
   const handlePlaylistToggle = useCallback(async (open: boolean) => {
     if (!isTauri()) return
@@ -188,7 +231,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </div>
       <PlaylistDrawer />
       <GlobalSearch />
-      <PlayerBar onMiniMode={enterMiniMode} />
+      <PlayerBar onMiniMode={toggleMini} miniDocked={taskbarDocked || isMiniPlayer} />
       <FloatingLyrics />
       <ToastContainer />
       <DownloadProgressToast />

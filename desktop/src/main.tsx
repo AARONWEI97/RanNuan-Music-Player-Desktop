@@ -27,19 +27,28 @@ setStorageAdapter(localStorageAdapter)
 const view = window.location.hash.replace(/^#/, '')
 const root = createRoot(document.getElementById('root')!)
 
-if (view === 'tray-panel' || view === 'lyrics') {
-  // 副窗口是 transparent 的，去掉默认底色让 CSS 圆角/阴影生效
-  document.body.classList.add('transparent-window')
-  document.documentElement.classList.add('transparent-window')
-
-  if (view === 'tray-panel') {
-    import('./windows/TrayPanelApp').then(({ default: TrayPanelApp }) => {
-      root.render(<StrictMode><TrayPanelApp /></StrictMode>)
+if (view === 'tray-panel' || view === 'lyrics' || view === 'taskbar-mini') {
+  if (view === 'taskbar-mini') {
+    // 任务栏条要贴着系统任务栏，不能套歌词窗那套 22px 圆角裁切
+    document.body.classList.add('taskbar-mini')
+    document.documentElement.classList.add('taskbar-mini')
+    import('./windows/TaskbarMiniApp').then(({ default: TaskbarMiniApp }) => {
+      root.render(<StrictMode><TaskbarMiniApp /></StrictMode>)
     })
   } else {
-    import('./windows/LyricsWindowApp').then(({ default: LyricsWindowApp }) => {
-      root.render(<StrictMode><LyricsWindowApp /></StrictMode>)
-    })
+    // 副窗口是 transparent 的，去掉默认底色让 CSS 圆角/阴影生效
+    document.body.classList.add('transparent-window')
+    document.documentElement.classList.add('transparent-window')
+
+    if (view === 'tray-panel') {
+      import('./windows/TrayPanelApp').then(({ default: TrayPanelApp }) => {
+        root.render(<StrictMode><TrayPanelApp /></StrictMode>)
+      })
+    } else {
+      import('./windows/LyricsWindowApp').then(({ default: LyricsWindowApp }) => {
+        root.render(<StrictMode><LyricsWindowApp /></StrictMode>)
+      })
+    }
   }
 } else {
   // ── 主窗口：唯一持有 audio / session / 快捷键的窗口 ──

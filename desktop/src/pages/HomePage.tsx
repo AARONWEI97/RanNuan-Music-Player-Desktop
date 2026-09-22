@@ -340,7 +340,82 @@ export default function HomePage() {
 
   const handleBannerClick = useCallback(
     (item: BannerItem) => {
-      // targetType: 1=单曲, 10=专辑, 1000=歌单, 1004=MV, 1014=电台
+      // 优先使用 url 字段（包含 orpheus:// 协议或 http:// 链接）
+      if (item.url) {
+        // 处理 orpheus:// 协议（网易云音乐内部协议）
+        if (item.url.startsWith('orpheus://')) {
+          const urlPath = item.url.replace('orpheus://', '')
+
+          // 解析路径：song/123, playlist/456, album/789, mv/111 等
+          const match = urlPath.match(/^(\w+)\/(\d+)/)
+          if (match) {
+            const [, type, id] = match
+            switch (type) {
+              case 'song':
+                navigate(`/song/${id}`)
+                return
+              case 'playlist':
+                navigate(`/playlist/${id}`)
+                return
+              case 'album':
+                navigate(`/album/${id}`)
+                return
+              case 'mv':
+                navigate(`/mv/${id}`)
+                return
+              case 'djradio':
+              case 'dj':
+                navigate(`/dj/${id}`)
+                return
+              case 'video':
+                navigate(`/video/${id}`)
+                return
+              case 'artist':
+                navigate(`/artist/${id}`)
+                return
+            }
+          }
+        }
+
+        // 处理 http/https 链接
+        if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
+          // 尝试提取网易云音乐链接中的 ID
+          const playlistMatch = item.url.match(/playlist[?/].*?id[=/](\d+)/)
+          const albumMatch = item.url.match(/album[?/].*?id[=/](\d+)/)
+          const songMatch = item.url.match(/song[?/].*?id[=/](\d+)/)
+          const mvMatch = item.url.match(/mv[?/].*?id[=/](\d+)/)
+          const artistMatch = item.url.match(/artist[?/].*?id[=/](\d+)/)
+
+          if (playlistMatch) {
+            navigate(`/playlist/${playlistMatch[1]}`)
+            return
+          } else if (albumMatch) {
+            navigate(`/album/${albumMatch[1]}`)
+            return
+          } else if (songMatch) {
+            navigate(`/song/${songMatch[1]}`)
+            return
+          } else if (mvMatch) {
+            navigate(`/mv/${mvMatch[1]}`)
+            return
+          } else if (artistMatch) {
+            navigate(`/artist/${artistMatch[1]}`)
+            return
+          } else {
+            // 外部链接（如活动页面），暂不支持
+            console.log('外部链接，应用内暂不支持:', item.url)
+            return
+          }
+        }
+      }
+
+      // 降级方案：使用 targetType + targetId
+      const hasValidId = item.targetId && item.targetId > 0
+      if (!hasValidId) {
+        console.log('Banner 无有效 ID，跳过跳转')
+        return
+      }
+
       switch (item.targetType) {
         case 1:
           navigate(`/song/${item.targetId}`)
@@ -352,20 +427,14 @@ export default function HomePage() {
           navigate(`/playlist/${item.targetId}`)
           break
         case 1004:
-          // MV 跳转音乐库 MV tab
-          navigate(`/library?tab=mv`)
+          navigate(`/mv/${item.targetId}`)
+          break
+        case 3000:
+          navigate(`/video/${item.targetId}`)
           break
         case 1014:
-          // 电台
+          navigate(`/dj/${item.targetId}`)
           break
-        default:
-          if (item.url) {
-            // 外链类型，尝试提取id
-            const match = item.url.match(/[?&]id=(\d+)/)
-            if (match) {
-              navigate(`/playlist/${match[1]}`)
-            }
-          }
       }
     },
     [navigate]

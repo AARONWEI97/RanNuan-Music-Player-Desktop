@@ -23,6 +23,8 @@ const PANEL_GAP: f64 = 8.0; // 面板与托盘/屏幕边缘的间距
 const LYRICS_W: f64 = 700.0;
 const LYRICS_H: f64 = 200.0;
 
+mod taskbar_mini;
+
 // ═══════════════ 托盘句柄状态（跨线程安全，用于动态更新 tooltip）═══════════════
 struct TrayState {
     handle: Mutex<Option<tauri::tray::TrayIcon>>,
@@ -221,6 +223,26 @@ fn show_main_window(app: tauri::AppHandle) {
     reveal_main_window(&app);
 }
 
+/// 任务栏小组件用：主窗口正在显示就藏到托盘，否则把它叫出来。
+/// 最小化也算「不在」，点击后恢复，而不是再藏一次。
+#[tauri::command]
+fn toggle_main_window(app: tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let minimized = window.is_minimized().unwrap_or(false);
+    if visible && !minimized {
+        let _ = window.hide();
+        return;
+    }
+    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
+        let _ = panel.hide();
+    }
+    notify_viewers(&app);
+    reveal_main_window(&app);
+}
+
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
@@ -258,16 +280,26 @@ fn create_panel_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 ///
 /// 主窗口据此决定是否广播播放快照 —— 没人在看时不发，避免播放期间
 /// 每秒数次无谓的 IPC。Rust 端查询真实窗口可见性，是唯一权威来源。
-fn notify_viewers(app: &tauri::AppHandle) {
-    let visible = [PANEL_LABEL, LYRICS_LABEL]
+fn current_viewer_count(app: &tauri::AppHandle) -> usize {
+    [PANEL_LABEL, LYRICS_LABEL, taskbar_mini::LABEL]
         .iter()
         .filter(|label| {
             app.get_webview_window(label)
                 .and_then(|w| w.is_visible().ok())
                 .unwrap_or(false)
         })
-        .count();
+        .count()
+}
+
+fn notify_viewers(app: &tauri::AppHandle) {
+    let visible = current_viewer_count(app);
     let _ = app.emit("panel:viewers", visible);
+}
+
+/// 主窗口桥启动后主动查询一次，避免错过 setup 阶段的 panel:viewers 广播。
+#[tauri::command]
+fn panel_viewer_count(app: tauri::AppHandle) -> usize {
+    current_viewer_count(&app)
 }
 
 /// 根据托盘图标的屏幕矩形计算面板位置，并钳制在显示器工作区内。
@@ -665,6 +697,7 @@ pub fn run() {
             open_downloads_folder,
             update_tray_tooltip,
             show_main_window,
+            toggle_main_window,
             quit_app,
             open_lyrics_window,
             close_lyrics_window,
@@ -673,6 +706,13 @@ pub fn run() {
             set_lyrics_window_locked,
             is_lyrics_window_locked,
             set_lyrics_window_hovering,
+            panel_viewer_count,
+            taskbar_mini::toggle_taskbar_mini,
+            taskbar_mini::is_taskbar_mini_open,
+            taskbar_mini::taskbar_mini_chrome,
+            taskbar_mini::taskbar_mini_command,
+            taskbar_mini::taskbar_mini_nudge,
+            taskbar_mini::taskbar_mini_end_drag,
         ])
         .setup(|app| {
             app.manage(LyricsWindowState {
@@ -739,6 +779,11 @@ pub fn run() {
             // ── 预建歌词窗口（与面板同理，必须在 setup 阶段创建）──
             if let Err(e) = create_lyrics_window(app.handle()) {
                 eprintln!("[lyrics] 歌词窗口预创建失败: {e}");
+            }
+
+            // ── 预建任务栏迷你条（同样必须在 setup 阶段创建）──
+            if let Err(e) = taskbar_mini::install(app.handle()) {
+                eprintln!("[taskbar-mini] 初始化失败: {e}");
             }
 
             // ── 预建托盘面板窗口 ──

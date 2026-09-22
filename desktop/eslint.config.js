@@ -10,6 +10,8 @@ export default defineConfig([
     'dist',
     'public/ranran/**',
     'RanRan-main/**',
+    'src-tauri/target/**',
+    'src-tauri/gen/**',
   ]),
   {
     files: ['**/*.{ts,tsx}'],
