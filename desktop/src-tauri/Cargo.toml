@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "3.8.5"
+version = "3.8.6"
 description = "RanNuan Music Player - Desktop"
 authors = ["AARONWEI97"]
 license = ""

@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback, useRef, Suspense, Component, type ReactNode } from 'react';
 import { Gauge, Images, Orbit, Moon, Sun as SunIcon, Video, Music } from 'lucide-react';
 import { toggleHostPlayback, useUniverseHostStore } from '../../bridge/universeHost';
 import { Canvas } from '@react-three/fiber';
@@ -17,6 +16,39 @@ import Scene, { type ViewMode } from './Scene';
 import ConstellationSelector from './ConstellationSelector';
 import LyricMeteors from './LyricMeteors';
 
+class StarfieldBoundary extends Component<{ children: ReactNode; resetKey: number }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidUpdate(prev: { resetKey: number }) {
+    if (prev.resetKey !== this.props.resetKey && this.state.failed) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#070910] px-6 text-center">
+        <div>
+          <p className="text-sm text-white/85">这台电脑没有创建出星空画面</p>
+          <p className="mt-1 text-xs text-white/45">开场不走显卡，星空画布失败后就会是黑屏</p>
+          <button
+            type="button"
+            className="mt-4 rounded-full border border-white/20 px-4 py-1.5 text-xs text-white/80"
+            onClick={() => this.setState({ failed: false })}
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 interface UniverseViewProps {
   photos: Photo[];
   onPhotoClick?: (photoId: string) => void;
@@ -33,6 +65,10 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
   const hostPlaying = useUniverseHostStore((s) => s.snapshot.isPlay);
   const [showIntro, setShowIntro] = useState(() => !settings.skipIntro);
   const [isUniverseReady, setIsUniverseReady] = useState(() => Boolean(settings.skipIntro));
+  const [hostReady, setHostReady] = useState(false);
+  const [glFailed, setGlFailed] = useState(false);
+  const [glKey, setGlKey] = useState(0);
+  const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const applySkip = () => {
@@ -198,28 +234,54 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
 
   const handleIntroComplete = useCallback(() => {
     setShowIntro(false);
-    window.setTimeout(() => setIsUniverseReady(true), 80);
+    setIsUniverseReady(true);
   }, []);
 
+  useEffect(() => {
+    if (showIntro) {
+      setHostReady(false);
+      return;
+    }
+    const node = hostRef.current;
+    if (!node) return;
+    let raf = 0;
+    const wait = () => {
+      if (node.clientWidth > 0 && node.clientHeight > 0) {
+        setHostReady(true);
+        return;
+      }
+      raf = requestAnimationFrame(wait);
+    };
+    raf = requestAnimationFrame(wait);
+    return () => cancelAnimationFrame(raf);
+  }, [showIntro]);
+
   return (
-    <div className="relative h-full w-full">
+    <div ref={hostRef} className="relative h-full w-full">
       {showIntro && <UniverseIntro onComplete={handleIntroComplete} />}
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: isUniverseReady ? 1 : 0 }}
-        transition={{ duration: 0.9 }}
-        className="relative z-[1] h-full w-full"
-      >
-        {!pauseScene && !showIntro && (
+      {/* 画布必须在已经可见、没有 opacity/transform 的盒子里创建。藏着创建时，除这台笔记本外 WebView2 会一直黑。 */}
+      <div className="absolute inset-0 z-[1]">
+        {!pauseScene && !showIntro && hostReady && !glFailed && (
+        <StarfieldBoundary resetKey={glKey}>
         <Canvas
+          key={glKey}
           camera={{ fov: 52, near: 0.1, far: 1400 }}
           dpr={[1, previewSrc ? 1 : performance.maxDpr]}
           gl={{
             antialias: false,
             alpha: false,
-            powerPreference: previewSrc ? 'low-power' : 'high-performance',
-            stencil: false,
+            powerPreference: 'default',
+            failIfMajorPerformanceCaveat: false,
+            preserveDrawingBuffer: true,
+            stencil: true,
+          }}
+          onCreated={({ gl }) => {
+            const lost = (event: Event) => {
+              event.preventDefault();
+              setGlFailed(true);
+            };
+            gl.domElement.addEventListener('webglcontextlost', lost);
           }}
           style={{ position: 'absolute', inset: 0, zIndex: 1 }}
         >
@@ -236,6 +298,25 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
             />
           </Suspense>
         </Canvas>
+        </StarfieldBoundary>
+        )}
+
+        {glFailed && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#070910] px-6 text-center">
+            <div>
+              <p className="text-sm text-white/85">星空画面中断了</p>
+              <button
+                type="button"
+                className="mt-4 rounded-full border border-white/20 px-4 py-1.5 text-xs text-white/80"
+                onClick={() => {
+                  setGlFailed(false);
+                  setGlKey((key) => key + 1);
+                }}
+              >
+                重试
+              </button>
+            </div>
+          </div>
         )}
 
         {!pauseScene && <div className="pointer-events-none absolute right-3 top-3 z-30">
@@ -311,7 +392,7 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
           onSelectPhoto={handleConstellationPhotoSelect}
         />
         )}
-      </motion.div>
+      </div>
 
       {!pauseScene && !showIntro && isUniverseReady && (
         <HologramCover sources={videoList} onExpand={() => setShowCinema(true)} />

@@ -273,7 +273,7 @@ const Scene: React.FC<SceneProps> = memo(({
       />
 
       {perfConfig.enablePostProcessing && !cinemaOpen && (
-        <EffectComposer>
+        <EffectComposer multisampling={0}>
           <BeatBloom />
           <Vignette darkness={0.38} offset={0.26} />
         </EffectComposer>

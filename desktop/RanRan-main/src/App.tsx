@@ -22,7 +22,6 @@ import MusicRecommendationPanel from './components/music/MusicRecommendationPane
 import { getPerformanceConfig, getStoredPerformanceTier, setStoredPerformanceTier, type PerformanceTier } from './utils/performance';
 import { initUniverseHost, isEmbedded, toggleHostPlayback, useUniverseHostStore } from './bridge/universeHost';
 import { useSettingsRuntime } from './hooks/useSettingsRuntime';
-import { getMotionPreset } from './utils/motionPresets';
 
 function App() {
   const { 
@@ -185,7 +184,7 @@ function App() {
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-dark-bg">
-      <MetaverseBackground />
+      {!isEmbedded && <MetaverseBackground />}
       
       <div className="relative z-10 w-full h-full flex flex-col">
         <Navbar
@@ -197,13 +196,10 @@ function App() {
         />
         
         <main className={`flex-1 overflow-hidden ${isEmbedded ? 'pt-14' : 'pt-16'}`}>
-          <motion.div
-            {...getMotionPreset(settings.transitionEffect)}
-            transition={{ duration: 0.35 }}
-            className="h-full"
-          >
+          {/* 星空 Canvas 不能挂在 opacity/transform 层下，WebView2 会一直黑。过场只留给弹窗。 */}
+          <div className="h-full">
             <PhotoGrid onPhotoClick={handlePhotoClick} />
-          </motion.div>
+          </div>
         </main>
       </div>
 
