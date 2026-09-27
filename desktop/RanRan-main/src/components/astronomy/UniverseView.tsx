@@ -16,11 +16,15 @@ import Scene, { type ViewMode } from './Scene';
 import ConstellationSelector from './ConstellationSelector';
 import LyricMeteors from './LyricMeteors';
 
-class StarfieldBoundary extends Component<{ children: ReactNode; resetKey: number }, { failed: boolean }> {
+class StarfieldBoundary extends Component<{ children: ReactNode; resetKey: number; onFailure: (error?: Error) => void }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidCatch(error: Error) {
+    this.props.onFailure(error);
   }
 
   componentDidUpdate(prev: { resetKey: number }) {
@@ -68,6 +72,8 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
   const [hostReady, setHostReady] = useState(false);
   const [glFailed, setGlFailed] = useState(false);
   const [glKey, setGlKey] = useState(0);
+  const [safeBoot, setSafeBoot] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,6 +92,7 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
   const [viewMode, setViewMode] = useState<ViewMode>('solar');
   const [performanceTier, setPerformanceTier] = useState<PerformanceTier | 'auto'>(() => getStoredPerformanceTier());
   const performance = getPerformanceConfig(performanceTier === 'auto' ? undefined : performanceTier);
+  const scenePerformanceTier = safeBoot ? 'low' : performanceTier === 'auto' ? undefined : performanceTier;
   const objectUrlsRef = useRef<string[]>([]);
 
   const pauseScene = showCinema || showVideoManager;
@@ -263,7 +270,18 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
       {/* 画布必须在已经可见、没有 opacity/transform 的盒子里创建。藏着创建时，除这台笔记本外 WebView2 会一直黑。 */}
       <div className="absolute inset-0 z-[1]">
         {!pauseScene && !showIntro && hostReady && !glFailed && (
-        <StarfieldBoundary resetKey={glKey}>
+        <StarfieldBoundary
+          resetKey={glKey}
+          onFailure={() => {
+            setRenderError('3D 场景初始化失败');
+            if (!safeBoot) {
+              setSafeBoot(true);
+              setGlKey((key) => key + 1);
+            } else {
+              setGlFailed(true);
+            }
+          }}
+        >
         <Canvas
           key={glKey}
           camera={{ fov: 52, near: 0.1, far: 1400 }}
@@ -273,15 +291,27 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
             alpha: false,
             powerPreference: 'default',
             failIfMajorPerformanceCaveat: false,
-            preserveDrawingBuffer: true,
-            stencil: true,
+            // Keep the default framebuffer lean. preserveDrawingBuffer/stencil
+            // caused WebView2 integrated GPUs to lose the context after intro.
+            preserveDrawingBuffer: false,
+            depth: true,
+            stencil: false,
           }}
           onCreated={({ gl }) => {
             const lost = (event: Event) => {
               event.preventDefault();
-              setGlFailed(true);
+              // Rebuild once with the low-cost 3D preset before showing an error.
+              if (!safeBoot) {
+                setRenderError('WebGL 上下文已重建');
+                setSafeBoot(true);
+                setGlKey((key) => key + 1);
+              } else {
+                setRenderError('WebGL 上下文在兼容模式下仍然中断');
+                setGlFailed(true);
+              }
             };
             gl.domElement.addEventListener('webglcontextlost', lost);
+            return () => gl.domElement.removeEventListener('webglcontextlost', lost);
           }}
           style={{ position: 'absolute', inset: 0, zIndex: 1 }}
         >
@@ -295,6 +325,8 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
               constellationPhotos={constellationPhotos}
               viewMode={viewMode}
               cinemaOpen={Boolean(previewSrc)}
+              performanceTier={scenePerformanceTier}
+              compatibilityMode={safeBoot}
             />
           </Suspense>
         </Canvas>
@@ -304,7 +336,8 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
         {glFailed && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#070910] px-6 text-center">
             <div>
-              <p className="text-sm text-white/85">星空画面中断了</p>
+              <p className="text-sm text-white/85">3D 星空画面中断了</p>
+              <p className="mt-1 max-w-xs text-xs text-white/45">{renderError || 'WebView2 没有保住当前的 WebGL 上下文'}</p>
               <button
                 type="button"
                 className="mt-4 rounded-full border border-white/20 px-4 py-1.5 text-xs text-white/80"

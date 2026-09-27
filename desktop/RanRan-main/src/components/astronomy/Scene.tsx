@@ -57,6 +57,8 @@ interface SceneProps {
   constellationPhotos: Record<ConstellationKey, Photo | null>;
   viewMode?: ViewMode;
   cinemaOpen?: boolean;
+  performanceTier?: PerformanceConfig['tier'];
+  compatibilityMode?: boolean;
 }
 
 const Scene: React.FC<SceneProps> = memo(({
@@ -68,6 +70,8 @@ const Scene: React.FC<SceneProps> = memo(({
   constellationPhotos,
   viewMode = 'solar',
   cinemaOpen = false,
+  performanceTier,
+  compatibilityMode = false,
 }) => {
   const { camera } = useThree();
   const settings = useUiStore((s) => s.settings);
@@ -83,8 +87,8 @@ const Scene: React.FC<SceneProps> = memo(({
   // perfRevision 是「性能档位变更」事件触发的重算信号，必须在回调里引用它才算合法依赖
   const perfConfig: PerformanceConfig = useMemo(() => {
     void perfRevision;
-    return getPerformanceConfig();
-  }, [perfRevision]);
+    return getPerformanceConfig(performanceTier);
+  }, [perfRevision, performanceTier]);
   const shouldVirtualize = photos.length > MAX_FULL_RENDER_PLANETS;
 
   useEffect(() => {
@@ -144,26 +148,26 @@ const Scene: React.FC<SceneProps> = memo(({
     <>
       <color attach="background" args={[isDark ? themeBg : '#070814']} />
 
-      <TwinklingStars count={starCount} radius={480} depth={90} isDark={isDark} />
+      <TwinklingStars count={compatibilityMode ? Math.min(starCount, 1800) : starCount} radius={480} depth={90} isDark={isDark} />
 
-      {perfConfig.meteorSlots > 0 && (
+      {!compatibilityMode && perfConfig.meteorSlots > 0 && (
         <ShootingStars slots={perfConfig.meteorSlots} intensity={intensity} isDark={isDark} />
       )}
 
-      {perfConfig.enableSpaceDust && intensity > 0 && (
+      {!compatibilityMode && perfConfig.enableSpaceDust && intensity > 0 && (
         <SpaceDust count={Math.floor(260 * Math.min(1, intensity))} isDark={isDark} />
       )}
 
-      <MilkyWayBand isDark={isDark} particleCount={Math.floor(starCount * 0.9)} />
-      <SpiralGalaxy isDark={isDark} particleMultiplier={galaxyMultiplier} />
-      <StarRiver isDark={isDark} density={Math.max(0.2, galaxyMultiplier)} />
-      <SkyDecor isDark={isDark} />
+      {!compatibilityMode && <MilkyWayBand isDark={isDark} particleCount={Math.floor(starCount * 0.9)} />}
+      {!compatibilityMode && <SpiralGalaxy isDark={isDark} particleMultiplier={galaxyMultiplier} />}
+      {!compatibilityMode && <StarRiver isDark={isDark} density={Math.max(0.2, galaxyMultiplier)} />}
+      {!compatibilityMode && <SkyDecor isDark={isDark} />}
 
       {REAL_STARS.map((star, index) => (
         <BackgroundStar key={star.name} star={star} index={index} />
       ))}
 
-      {Object.entries(CONSTELLATIONS).map(([key, constellation]) => {
+      {!compatibilityMode && Object.entries(CONSTELLATIONS).map(([key, constellation]) => {
         const constKey = key as ConstellationKey;
         return (
           <ConstellationPattern
@@ -178,7 +182,7 @@ const Scene: React.FC<SceneProps> = memo(({
         );
       })}
 
-      {(Object.keys(CONSTELLATIONS) as ConstellationKey[]).map((constKey) => (
+      {!compatibilityMode && (Object.keys(CONSTELLATIONS) as ConstellationKey[]).map((constKey) => (
         <ConstellationTextureLoader
           key={`loader-${constKey}`}
           constellationKey={constKey}
@@ -192,19 +196,19 @@ const Scene: React.FC<SceneProps> = memo(({
 
       <Sun />
 
-      {perfConfig.enableSunRays && intensity > 0 && (
+      {!compatibilityMode && perfConfig.enableSunRays && intensity > 0 && (
         <SunRays isDark={isDark} />
       )}
 
-      {perfConfig.enableBlackHole && <BlackHole />}
+      {!compatibilityMode && perfConfig.enableBlackHole && <BlackHole />}
 
-      {perfConfig.enablePulsar && <Pulsar />}
+      {!compatibilityMode && perfConfig.enablePulsar && <Pulsar />}
 
-      {perfConfig.supernovaSlots > 0 && (
+      {!compatibilityMode && perfConfig.supernovaSlots > 0 && (
         <SupernovaEvents slots={perfConfig.supernovaSlots} isDark={isDark} />
       )}
 
-      {perfConfig.enableNebula && intensity > 0 && (
+      {!compatibilityMode && perfConfig.enableNebula && intensity > 0 && (
         <>
           <Nebula position={[-48, 36, -92]} color1={settings.theme?.secondaryColor || '#ff5a9a'} color2="#5a3aff" size={58} isDark={isDark} />
           <Nebula position={[62, 22, -86]} color1={settings.theme?.primaryColor || '#3ab8ff'} color2="#2affb0" size={48} isDark={isDark} />
@@ -272,7 +276,7 @@ const Scene: React.FC<SceneProps> = memo(({
         target={[0, 4, -8]}
       />
 
-      {perfConfig.enablePostProcessing && !cinemaOpen && (
+      {!compatibilityMode && perfConfig.enablePostProcessing && !cinemaOpen && (
         <EffectComposer multisampling={0}>
           <BeatBloom />
           <Vignette darkness={0.38} offset={0.26} />
