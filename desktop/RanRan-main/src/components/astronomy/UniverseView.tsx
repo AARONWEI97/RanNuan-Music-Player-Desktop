@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Suspense, Component, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense, Component, type ReactNode } from 'react';
 import { Gauge, Images, Orbit, Moon, Sun as SunIcon, Video, Music } from 'lucide-react';
 import { toggleHostPlayback, useUniverseHostStore } from '../../bridge/universeHost';
 import { Canvas } from '@react-three/fiber';
@@ -6,6 +6,7 @@ import localforage from 'localforage';
 import type { Photo } from '../../types';
 import { dbService } from '../../services/database';
 import { getPerformanceConfig, getStoredPerformanceTier, type PerformanceTier } from '../../utils/performance';
+import { watchWebGLContext } from '../../utils/webglRecovery';
 import { type ConstellationKey } from './constants';
 import { useUiStore } from '../../store/modules/uiStore';
 import UniverseIntro from './UniverseIntro';
@@ -73,8 +74,13 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
   const [glFailed, setGlFailed] = useState(false);
   const [glKey, setGlKey] = useState(0);
   const [safeBoot, setSafeBoot] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
+  // 兼容模式自动重试次数：首启 shader 编译风暴易触发 TDR，缓存热身后重试一次可自愈
+  const compatRetriesRef = useRef(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
+  const canvasCleanupRef = useRef<(() => void) | null>(null);
+  const initRetryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const applySkip = () => {
@@ -91,12 +97,21 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
   const [videoList, setVideoList] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('solar');
   const [performanceTier, setPerformanceTier] = useState<PerformanceTier | 'auto'>(() => getStoredPerformanceTier());
-  const performance = getPerformanceConfig(performanceTier === 'auto' ? undefined : performanceTier);
   const scenePerformanceTier = safeBoot ? 'low' : performanceTier === 'auto' ? undefined : performanceTier;
+  const performance = getPerformanceConfig(scenePerformanceTier);
   const objectUrlsRef = useRef<string[]>([]);
 
   const pauseScene = showCinema || showVideoManager;
   const previewSrc = videoList[0] || '';
+
+  // These are exactly the conditions that remove/replace Canvas below. Clean up
+  // on that transition, including cinema entry while UniverseView stays mounted.
+  useLayoutEffect(() => () => {
+    canvasCleanupRef.current?.();
+    canvasCleanupRef.current = null;
+    clearTimeout(initRetryTimerRef.current);
+    initRetryTimerRef.current = undefined;
+  }, [pauseScene, showIntro, hostReady, glFailed, glKey]);
 
   useEffect(() => {
     setIsDark(settings.universeDark !== false);
@@ -277,6 +292,12 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
             if (!safeBoot) {
               setSafeBoot(true);
               setGlKey((key) => key + 1);
+            } else if (compatRetriesRef.current < 1) {
+              compatRetriesRef.current += 1;
+              initRetryTimerRef.current = setTimeout(() => {
+                initRetryTimerRef.current = undefined;
+                setGlKey((key) => key + 1);
+              }, 1200);
             } else {
               setGlFailed(true);
             }
@@ -298,20 +319,29 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
             stencil: false,
           }}
           onCreated={({ gl }) => {
-            const lost = (event: Event) => {
-              event.preventDefault();
-              // Rebuild once with the low-cost 3D preset before showing an error.
-              if (!safeBoot) {
-                setRenderError('WebGL 上下文已重建');
-                setSafeBoot(true);
-                setGlKey((key) => key + 1);
-              } else {
-                setRenderError('WebGL 上下文在兼容模式下仍然中断');
-                setGlFailed(true);
-              }
-            };
-            gl.domElement.addEventListener('webglcontextlost', lost);
-            return () => gl.domElement.removeEventListener('webglcontextlost', lost);
+            canvasCleanupRef.current?.();
+            setRenderError(null);
+            setContextLost(false);
+            canvasCleanupRef.current = watchWebGLContext(gl.domElement, {
+              lost: () => {
+                setContextLost(true);
+                setRenderError('WebGL 上下文丢失，等待恢复');
+              },
+              restored: () => {
+                setContextLost(false);
+                setRenderError(null);
+              },
+              expired: () => {
+                if (!safeBoot) {
+                  setRenderError('WebGL 上下文未自行恢复，正在用兼容模式重建');
+                  setSafeBoot(true);
+                  setGlKey((key) => key + 1);
+                } else {
+                  setRenderError('WebGL 上下文在兼容模式下仍然中断');
+                  setGlFailed(true);
+                }
+              },
+            });
           }}
           style={{ position: 'absolute', inset: 0, zIndex: 1 }}
         >
@@ -327,6 +357,7 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
               cinemaOpen={Boolean(previewSrc)}
               performanceTier={scenePerformanceTier}
               compatibilityMode={safeBoot}
+              contextLost={contextLost}
             />
           </Suspense>
         </Canvas>
@@ -342,6 +373,8 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
                 type="button"
                 className="mt-4 rounded-full border border-white/20 px-4 py-1.5 text-xs text-white/80"
                 onClick={() => {
+                  compatRetriesRef.current = 0;
+                  setRenderError(null);
                   setGlFailed(false);
                   setGlKey((key) => key + 1);
                 }}
@@ -363,7 +396,7 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-white/40">
               <Gauge size={11} />
-              <span>{performanceTier === 'auto' ? `自动 ${performance.tier}` : performanceTier}</span>
+              <span>{safeBoot ? '兼容 low' : performanceTier === 'auto' ? `自动 ${performance.tier}` : performanceTier}</span>
             </div>
           </div>
         </div>}
@@ -427,7 +460,9 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
         )}
       </div>
 
-      {!pauseScene && !showIntro && isUniverseReady && (
+      {/* 星空挂掉时不能再叠全息影院：黑底 + 一块高亮面板 = 用户看到的「过曝」，
+          而且此时点它只会开一个没有背景的播放器 */}
+      {!pauseScene && !showIntro && isUniverseReady && !glFailed && (
         <HologramCover sources={videoList} onExpand={() => setShowCinema(true)} />
       )}
 

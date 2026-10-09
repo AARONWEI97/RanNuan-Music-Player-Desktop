@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>GPU 探针 - 宇宙相册黑屏排查</title>
+<style>
+  body { background:#0b0e14; color:#dfe6f3; font-family:Consolas,monospace; margin:24px; }
+  canvas { border:1px solid #334; display:block; margin:12px 0; }
+  .pass { color:#4ade80; } .fail { color:#f87171; } .warn { color:#facc15; }
+  pre { background:#131722; padding:16px; border-radius:8px; line-height:1.7; white-space:pre-wrap; }
+  h1 { font-size:18px; } h2 { font-size:14px; color:#8ab4f8; margin-top:24px; }
+</style>
+</head>
+<body>
+<h1>宇宙相册 GPU 探针</h1>
+<p>左半屏应看到彩色三角形（=行星类网格渲染），右半屏应看到一片白色星点（=星空类点精灵渲染）。</p>
+<canvas id="c" width="640" height="320"></canvas>
+<h2>检测结果（自动判定，无需人工看图）</h2>
+<pre id="log">检测中...</pre>
+<script>
+const out = [];
+const logEl = document.getElementById('log');
+function emit(k, v, cls) { out.push({ k, v, cls }); render(); }
+function render() {
+  logEl.innerHTML = out.map(o => `<span class="${o.cls||''}">${o.k}: ${o.v}</span>`).join('\n');
+}
+function finish(verdict, cls) {
+  out.push({ k: '==== 结论 ====', v: verdict, cls });
+  render();
+}
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+
+if (!gl) {
+  emit('WebGL2', '创建失败', 'fail');
+  finish('这台机器连 WebGL2 上下文都建不出来 → 环境级问题（runtime/驱动/策略），与代码无关', 'fail');
+} else {
+  emit('WebGL2', '创建成功', 'pass');
+  emit('UserAgent', navigator.userAgent);
+
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  if (dbg) {
+    emit('显卡厂商', gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL));
+    emit('显卡型号', gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+  } else {
+    emit('显卡信息', 'WEBGL_debug_renderer_info 不可用', 'warn');
+  }
+  const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+  emit('点精灵尺寸范围', range[0] + ' ~ ' + range[1] + (range[1] <= 1 ? '（异常！点无法放大）' : ''), range[1] <= 1 ? 'fail' : 'pass');
+  emit('EXT_color_buffer_float', gl.getExtension('EXT_color_buffer_float') ? '支持（Bloom 后处理可用）' : '不支持（Bloom 会失败！）',
+    gl.getExtension('EXT_color_buffer_float') ? 'pass' : 'fail');
+
+  // ---- 着色器：与 TwinklingStars 同款的点精灵写法 ----
+  const vsPoints = `#version 300 es
+  in vec3 aPos; in float aSize;
+  uniform mat4 uProj;
+  void main() {
+    vec4 mv = vec4(aPos, 1.0);
+    gl_Position = uProj * mv;
+    gl_PointSize = aSize * (160.0 / max(1.0, -aPos.z));
+  }`;
+  const fsPoints = `#version 300 es
+  precision mediump float;
+  out vec4 fragColor;
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    float a = smoothstep(0.5, 0.05, length(uv));
+    fragColor = vec4(1.0, 1.0, 1.0, a);
+  }`;
+  const vsTri = `#version 300 es
+  in vec3 aPos; in vec3 aColor; out vec3 vColor;
+  void main() { vColor = aColor; gl_Position = vec4(aPos, 1.0); }`;
+  const fsTri = `#version 300 es
+  precision mediump float; in vec3 vColor; out vec4 fragColor;
+  void main() { fragColor = vec4(vColor, 1.0); }`;
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      return { err: gl.getShaderInfoLog(s) };
+    }
+    return { s };
+  }
+  function program(vsSrc, fsSrc, label) {
+    const vs = compile(gl.VERTEX_SHADER, vsSrc);
+    if (vs.err) { emit(label + ' 顶点着色器', '编译失败: ' + vs.err, 'fail'); return null; }
+    const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+    if (fs.err) { emit(label + ' 片元着色器', '编译失败: ' + fs.err, 'fail'); return null; }
+    const p = gl.createProgram();
+    gl.attachShader(p, vs.s); gl.attachShader(p, fs.s); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      emit(label, '链接失败: ' + gl.getProgramInfoLog(p), 'fail'); return null;
+    }
+    emit(label, '编译链接成功', 'pass');
+    return p;
+  }
+
+  const triProg = program(vsTri, fsTri, '网格着色器');
+  const ptsProg = program(vsPoints, fsPoints, '点精灵着色器（TwinklingStars 同款写法）');
+
+  // 简单透视矩阵
+  function perspective(fov, aspect, near, far) {
+    const f = 1 / Math.tan(fov / 2), m = new Float32Array(16);
+    m[0] = f / aspect; m[5] = f;
+    m[10] = (far + near) / (near - far); m[11] = -1;
+    m[14] = 2 * far * near / (near - far);
+    return m;
+  }
+
+  gl.viewport(0, 0, 640, 320);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  // 左半屏：三角形（网格渲染对照组）
+  if (triProg) {
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      // x, y, z, r, g, b
+      -0.9, -0.6, 0, 1, 0.2, 0.2,
+      -0.2, -0.6, 0, 0.2, 1, 0.2,
+      -0.55, 0.6, 0, 0.3, 0.4, 1,
+    ]), gl.STATIC_DRAW);
+    gl.useProgram(triProg);
+    const aPos = gl.getAttribLocation(triProg, 'aPos');
+    const aColor = gl.getAttribLocation(triProg, 'aColor');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(aColor);
+    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 24, 12);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // 右半屏：200 个星点（点精灵实验组），z 分布模拟真实星空深度
+  if (ptsProg) {
+    const n = 200, data = new Float32Array(n * 4);
+    let seed = 42;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < n; i++) {
+      data[i * 4] = 30 + rnd() * 160;            // x（右半屏世界坐标）
+      data[i * 4 + 1] = -80 + rnd() * 160;       // y
+      data[i * 4 + 2] = -(60 + rnd() * 380);     // z 深度
+      data[i * 4 + 3] = 1 + Math.floor(rnd() * 5); // 尺寸 1~5，含极小点
+    }
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.useProgram(ptsProg);
+    // 相机放原点附近看向 -z，视野对准右半屏
+    const proj = perspective(1.0, 2.0, 1, 1000);
+    // 平移画面让点群落在右半屏
+    proj[12] = 0.55;
+    gl.uniformMatrix4fv(gl.getUniformLocation(ptsProg, 'uProj'), false, proj);
+    const aPos = gl.getAttribLocation(ptsProg, 'aPos');
+    const aSize = gl.getAttribLocation(ptsProg, 'aSize');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(aSize);
+    gl.vertexAttribPointer(aSize, 1, gl.FLOAT, false, 16, 12);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // 加色混合，与星空组件一致
+    gl.drawArrays(gl.POINTS, 0, n);
+    gl.disable(gl.BLEND);
+  }
+
+  // ---- 客观判定：readPixels 数亮点 ----
+  function countBright(x0, y0, w, h) {
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let c = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 40) c++;
+    return c;
+  }
+  const triPx = countBright(0, 0, 320, 320);
+  const ptsPx = countBright(320, 0, 320, 320);
+  emit('网格渲染像素数', triPx + (triPx > 500 ? '（正常）' : '（异常）'), triPx > 500 ? 'pass' : 'fail');
+  emit('星点渲染像素数', ptsPx + (ptsPx > 50 ? '（正常）' : '（异常！星点没画出来）'), ptsPx > 50 ? 'pass' : 'fail');
+
+  // ---- Bloom 后处理依赖的浮点渲染目标 ----
+  let floatOK = false;
+  try {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 64, 64, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    floatOK = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  } catch (e) { floatOK = false; }
+  emit('浮点渲染目标', floatOK ? '可用（Bloom 正常）' : '不可用（全效模式会崩！）', floatOK ? 'pass' : 'fail');
+
+  if (ptsPx <= 50) {
+    finish('点精灵渲染异常 → 星空全灭的根因在这台机器的图形链路上，下一步换 ANGLE 后端或升级 runtime', 'fail');
+  } else if (!floatOK) {
+    finish('点精灵正常但浮点 RT 不可用 → 星空能显示，但 Bloom 后处理会炸上下文（故障A）', 'warn');
+  } else {
+    finish('这台机器 Edge 里一切正常 → 问题在 WebView2 runtime 或应用配置，需要做应用内对比测试', 'warn');
+  }
+}
+</script>
+</body>
+</html>

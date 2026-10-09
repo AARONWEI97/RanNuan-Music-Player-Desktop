@@ -2792,3 +2792,144 @@ AudioBand 用的是 explorer 进程里的 Deskband（`IDeskBand`）。Windows 11
 
 实机要点过的路径（按钮、点击切换主窗口、自动隐藏）无法用浏览器代点，改完要在 Windows 任务栏上自己看一眼。改了 `src-tauri` 必须整进程重启；只改 `TaskbarMiniApp.tsx` / `index.css` 时，这条 webview 也要重新加载才会变。
 
+---
+
+## 三十五、宇宙相册「黑屏 / 糊白」排查（2026-10-09）
+
+多台机器（12100 核显、12400F+3060Ti、开发笔记本）进入宇宙相册后出现两种不同症状。浏览器中也能复现，说明问题不限于 WebView2，**不能由此排除显卡/驱动，也不能把第一次上下文丢失的原因视为已查明**。35.1–35.6 保留首轮排查记录；其中「只调 Bloom 足够」等推断已被后续实测纠正，当前结论和验证见 **35.7**。
+
+### 35.1 两个症状要分清楚
+
+| 症状 | 表现 | 根因 | 见 |
+|------|------|------|-----|
+| **A. 糊白 / 过曝** | 整帧发白，粉青斑块铺满，看不清结构 | Bloom 参数是在星层静默不画时调的 | 35.4 |
+| **B. 纯黑 + 错误浮层** | 进入后或点一下变全黑，提示「3D 星空画面中断了 / WebGL 上下文在兼容模式下仍然中断」 | 上下文丢失的自我放大级联 | 35.3 |
+
+排查时不要混：A 是「画面在画但太亮」，B 是「画面根本没在画」。之前把两者都归到「环境论」，方向错了。
+
+### 35.2 构建链路的坑（先确认产物是新的）
+
+`desktop/RanRan-main/` 是**独立的 vite 项目**（`package.json` name 为 `ranran`，`vite.config.ts` 里 base 是 `/ranran/`）。**它不在 desktop 的构建链上**：
+
+- `desktop/vite.config.ts` 里没有任何引用 `RanRan-main` 的逻辑
+- `desktop/scripts/` 下只有 `sync-version.mjs`
+- 仓库根目录没有 `package.json`
+
+桌面端通过 iframe 加载 `desktop/public/ranran/index.html`（见 `src/pages/UniversePage.tsx`），而 `desktop/public/ranran/` 是 `RanRan-main/dist/` 的**手工拷贝，没有自动化同步**。
+
+**改完宇宙相册必须手动跑这两步，否则改动不进 exe：**
+
+```bash
+cd desktop/RanRan-main && npm run build
+```
+
+```bash
+cd desktop && rm -rf public/ranran && cp -r RanRan-main/dist public/ranran
+```
+
+**验证产物真的换了**（这一步别省，否则会误判成「修复没生效」）：
+
+```bash
+cd desktop && grep -o "新加的中文注释文本" public/ranran/assets/index-*.js | wc -l
+```
+
+源码里写进模板字符串的中文注释会被 minifier 保留，是很好的产物标记。同时核对 `public/ranran/index.html` 里 `index-XXXXXXXX.js` 的哈希名是否更新。
+
+### 35.3 症状 B：上下文丢失的自我放大级联
+
+**真因**：`@react-three/fiber` 在卸载 canvas 后 **500ms 会主动调 `gl.forceContextLoss()`**（`node_modules/@react-three/fiber/dist/events-*.esm.js` 约 15829 行，在 `unmountComponentAtNode` 的 `setTimeout(..., 500)` 里）。
+
+而 `UniverseView.tsx` 用 `key={glKey}` 在上下文丢失时重挂载 `<Canvas>`，两者相撞就成了级联：
+
+```
+上下文真丢一次 → lost 处理器 → 定时器 → setSafeBoot(true) + setGlKey+1
+              → canvas 重挂载 → R3F 对刚拆掉的旧 canvas 调 forceContextLoss()
+              → 旧 canvas 的 lost 监听器还在 → 又被当成一次真故障
+              → 再排定时器 → 再重挂载 → …直到 compatRetries 用尽 → glFailed = true
+```
+
+日志特征：控制台连续出现 **3 次** `THREE.WebGLRenderer: Context Lost.`。
+
+**为什么「换什么都不管用」**：它是纯代码层的自我放大，和硬件无关。这也解释了为什么高配机（3060Ti）反而更容易看到——它跑在 `high` 档，触发概率更高。
+
+**已做的三处改动：**
+
+1. `UniverseView.tsx` `onCreated` 的 `lost` 处理器加**守卫**：`if (!document.contains(canvas)) return;` —— 已摘出文档的旧 canvas 发的 `contextlost` 直接忽略，级联从源头断掉。
+2. 同处把「同一 tick 内重建」改成**等 2.5s**（Windows TDR 默认 2s）再降级，并补了 `webglcontextrestored` 处理器清掉定时器、清错误态。依据：three.js r0.183 的 `WebGLRenderer` **自带** `webglcontextlost`/`webglcontextrestored` 处理（`three.module.js:16175`，`onContextRestore` 会 `initGLContext()`），上下文应由 three 负责恢复，不要抢在它之前重建。
+3. `utils/performance.ts` 的 `detectGPUTier()` 泄漏修复：原来创建探测上下文后只 `canvas.remove()`，**从未释放 GL 上下文**。每次切性能档位触发 `clearPerformanceCache()` 就泄漏一个，浏览器活跃上下文上限约 16 个，被回收的可能正是主场景那个。已改为显式 `gl.getExtension('WEBGL_lose_context')?.loseContext()`。
+
+> 页面右上角显示「自动 low」是**症状不是原因**：它取 `detectGPUTier()` 的结果，而那里 `getContext('webgl2')` 返回 null，说明当时 GPU 已在压力下拒绝新建上下文。
+
+### 35.4 症状 A：Bloom 过曝
+
+> **后续实测纠正**：关闭 Bloom 仍严重过曝，主因是共享星点尺寸过大、密集加法混合使原始画面饱和。以下为首轮假设，不再作为定论；1.35～1.68 是局部着色倍率，不是整帧亮度增幅。见 35.7。
+
+`Scene.tsx` 的 Bloom 原值 `BLOOM_BASE_INTENSITY = 1.72`、`luminanceThreshold = 0.14`，从项目初始化（commit `ffc7af4`）起就没动过。
+
+**问题是它在星层「死着」的时候调的**。`TwinklingStars` / `SoftPoints` 因为 shader 编译失败整层静默不画（见 35.5），两层修好后，它们是 `AdditiveBlending` + `toneMapped: false`，且 fragment shader 把颜色放大到 1.35~1.68 倍：
+
+- `SoftPoints.tsx`：`gl_FragColor = vec4(vColor * (0.65 + core * 0.7), alpha)`
+- `TwinklingStars.tsx`：`gl_FragColor = vec4(vColor * (0.6 + core*0.8) * (0.5 + vTwinkle*0.7), alpha)`
+
+等于凭空多出一大截叠加光源，原参数必然过曝。开发机上另外五六个星层盖住了亮度缺口，所以没察觉。
+
+**已改为** `BLOOM_BASE_INTENSITY = 1.15`，并抽出 `BLOOM_LUMINANCE_THRESHOLD = 0.22`（原来是内联的 0.14）。这是按「两层真的在画」重配的**基准值**，实机观感不对就调这两个常量，不要再去怀疑星层或渲染管线。`compatibilityMode` 为 true 时整段后处理不挂载，所以换性能档位不影响这两个值。
+
+### 35.5 已关闭：`attribute vec3 color` 重复声明
+
+`TwinklingStars.tsx` / `SoftPoints.tsx` 里手写了 `attribute vec3 color;`，而它们都开了 `vertexColors: true` —— three 会自动注入同样的声明，同一变量声明两次，严格的编译器直接判编译失败，星层静默消失（不报错、不崩溃，就是不画）。**已修复**（删掉手写声明，留注释说明）。
+
+修复**已确认打进产物**，verification 方法：
+
+```bash
+cd desktop && grep -o "手写会重复定义" public/ranran/assets/index-*.js | wc -l
+```
+
+> 排查时注意：bundle 里还会剩 **2 处** `attribute vec3 color;`，都是**无害的第三方代码**，不要误判成漏改：
+> - three 自己的 `ShaderChunk`，在 `#elif defined( USE_COLOR )` 条件编译里面
+> - drei 的 `SparklesImplMaterial`（`@react-three/drei/core/Sparkles.js:7`），它**没设 `vertexColors`**，手写声明是配对的。且 `Sparkles` 只被 `MetaverseBackground.tsx` 用，而 `App.tsx:187` 是 `{!isEmbedded && <MetaverseBackground />}`，宇宙相册是 iframe 嵌入，这条线根本不走。
+
+### 35.6 验证清单（改完宇宙相册必跑）
+
+1. `cd desktop/RanRan-main && npx tsc --noEmit -p tsconfig.app.json`（类型）
+2. `npm run build`，再 `rm -rf ../public/ranran && cp -r dist ../public/ranran`
+3. 用 35.2 的 `grep` 核对产物里有本次改动的新标记串
+4. iframe 页面本身**不依赖 Tauri 宿主**，可在浏览器直接开 `http://localhost:5173/ranran/index.html` 验证；注意根路由 `http://localhost:5173/` 会因 `getCurrentWindow()` 报错而白屏，这是**正常现象**，不是宇宙相册的问题
+5. `npx eslint` 里 `UniverseView.tsx` 的 2 条 `react-hooks/set-state-in-effect` 是**预存在**的（HEAD 版本同样报），与本节改动无关
+
+**实机验证仍待你确认**：35.3 的守卫与 35.4 的 Bloom 新值都还**没有在真机打包环境上跑过**（dev 环境里故障是间歇性的，抓不到稳定复现）。建议改完打包后重点看两件事：进入后是否还会弹「兼容模式下仍然中断」；画面是否还糊白。
+
+### 35.7 第二轮实测修复（2026-10-09）
+
+用户反馈首轮包仍糊白/黑屏后，在本机 Chromium 浏览器中加载 `index-CKqO11DD.js`，复现了相同糊白画面。本轮实际做了渲染对照和 `WEBGL_lose_context` 故障注入，不以类型检查替代运行验证。
+
+**修复内容：**
+
+- `SoftPoints` 原公式在密集星河、星云中产生大量 30–64px 光斑；关闭后处理仍会饱和。将距离缩放因子从 220 调整为 12、限制到 0.7–8 CSS px，并把加法层透明度乘以 0.35（普通混合暗尘不变）。`TwinklingStars` 尺寸因子从 30 改为 3、限制到 0.7–4 CSS px。两者按实际 DPR 换算物理像素，保留星层而不是隐藏它们。
+- Bloom 保持 1.15 / 0.22。改用稳定 callback ref：React 19 将 ref 放进 props，后处理库 3.x 对 props 做 `JSON.stringify`，对象 ref 填入 BloomEffect 后会形成循环引用；dev 中实测捕获过该异常。淡入改用 delta，避免刷新率影响时长。
+- 实测上下文丢失时 `EffectComposer.addPass` 会读取空的 `getContextAttributes().alpha`，触发异常。新增独立、memo 化的后处理组件，在 R3F 内通过 `useSyncExternalStore` 读取真实 context 状态；丢失时卸下，恢复后重建。仅依赖父 DOM 根的状态存在跨 React root 时序窗口，故保留 R3F 内的同步检查。
+- 新增 `watchWebGLContext`：每个 canvas 独立定时器、监听器、销毁函数；过期时重新检查连接状态。影院/片库、画布换代、离页都清理；旧画布恢复事件不能清除新画布的定时器。兼容模式同时采用 low 的 DPR，手动重试重置初始化重试额度。
+
+**本轮验证记录：**
+
+| 项目 | 结果 |
+|------|------|
+| 572×665 场景截图像素采样，high、Bloom 开启 | 接近纯白（RGB 三通道均 >245）占比从 85.35% 降至约 0.13%；动态场景采样值有轻微波动 |
+| 关闭 Bloom 对照 | 原版仍大片白；缩小粒子并控制加法透明度后恢复星河结构 |
+| 主动丢失，700ms 后 restore | 同一 canvas 恢复出帧，保持 high，没有误降级 |
+| 丢失不恢复 | 2.5s 后仅重建一次进入兼容 low，等待后没有级联错误 |
+| 兼容模式丢失后立即进入影院，超过 2.5s 再退出 | 重新出帧，没有被旧定时器设置 glFailed |
+| 兼容模式再次永久丢失 | 正常显示错误页；点重试后重新出帧 |
+| 发布包 1533×910 / 529×910 窗口 | 已目视验证，无整片糊白，星河和太阳可辨 |
+| `tsc --noEmit -p tsconfig.app.json` | 通过 |
+| 恢复逻辑 Node 回归测试 | 5/5 通过 |
+| 改动文件 ESLint | 新增/修改逻辑无新增报错；UniverseView 保留两条既有 set-state-in-effect 报错 |
+| RanRan Vite 生产构建 | 通过，`index-D2gGo8IC.js` |
+| `npm run tauri -- build` | 通过，生成 `src-tauri/target/release/app.exe` 及 `bundle/nsis/RanNuan Music_3.8.6_x64-setup.exe` |
+
+回归入口：`RanRan-main/tests/universe.html`（Vite dev 下访问 `/ranran/tests/universe.html`，默认真实 UniverseView；加 `?scene` 做 Bloom 对照）；自动测试：`node --experimental-strip-types --test tests/webglRecovery.test.mjs`（Node 22.20）。测试入口不进入生产构建。
+
+产物已复制到 `public/ranran`，与 `RanRan-main/dist` 的 JS SHA-256 一致；iframe 缓存号为 `20261009c`。独立浏览器已有 Service Worker 时，首次导航仍可能拿旧 index，等 SW 更新后刷新，**以页面 script 实际哈希为准**，不能只看 URL 的 build 参数。
+
+范围：本轮浏览器实测覆盖无照片/无视频的场景和主动上下文故障。尚未在用户的多台 GPU 上复测，也没有将这些结果等同于打包后的 WebView2 全场景验收。首次自然 context loss 的外部触发因素仍不能断言已全部排除。
+

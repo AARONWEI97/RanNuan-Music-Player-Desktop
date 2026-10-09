@@ -98,9 +98,13 @@ function detectGPUTier(): PerformanceTier {
     
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     const maxRenderbufferSize = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
-    
+
+    // 探测用的上下文必须显式释放：canvas.remove() 只摘 DOM，GL 上下文要等 GC 才回收。
+    // 浏览器活跃上下文上限约 16 个，泄漏的会被按「最旧优先」回收——先死的正好可能是主场景那个。
+    // 上面要读的参数已全部读出，这里之后不再碰 gl。
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
     canvas.remove();
-    
+
     if (maxTextureSize < 4096 || maxRenderbufferSize < 4096) {
       return 'low';
     }

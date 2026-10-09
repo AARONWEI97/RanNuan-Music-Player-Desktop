@@ -1,4 +1,5 @@
 import { useMemo, useEffect, memo } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface SoftPointsProps {
@@ -20,6 +21,7 @@ const SoftPoints: React.FC<SoftPointsProps> = memo(({
   blending = THREE.AdditiveBlending,
   renderOrder = 0,
 }) => {
+  const pixelRatio = useThree((state) => state.viewport.dpr);
   // opacity/sizeScale 进 deps：变化时重建材质而非在 effect 里改 hook 值（react-hooks/immutability）
   const material = useMemo(() => new THREE.ShaderMaterial({
     transparent: true,
@@ -28,18 +30,24 @@ const SoftPoints: React.FC<SoftPointsProps> = memo(({
     toneMapped: false,
     vertexColors: true,
     uniforms: {
-      uOpacity: { value: opacity },
+      // Dense galaxy/nebula layers share this material. Budget their additive
+      // contribution; normal-blended dust must retain its occluding opacity.
+      uOpacity: { value: opacity * (blending === THREE.AdditiveBlending ? 0.35 : 1) },
       uScale: { value: sizeScale },
+      uPixelRatio: { value: pixelRatio },
     },
     vertexShader: `
       attribute float size;
-      attribute vec3 color;
+      // 注意：vertexColors:true 时 three 会自动注入 color 属性声明，手写会重复定义导致编译失败
       varying vec3 vColor;
       uniform float uScale;
+      uniform float uPixelRatio;
       void main() {
         vColor = color;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = clamp(size * uScale * (220.0 / max(1.0, -mvPosition.z)), 1.2, 64.0);
+        // Keep distant stars a few CSS pixels wide. The previous 220 factor
+        // produced overlapping 30-64px discs and saturated the base image.
+        gl_PointSize = clamp(size * uScale * (12.0 / max(1.0, -mvPosition.z)), 0.7, 8.0) * uPixelRatio;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -56,7 +64,7 @@ const SoftPoints: React.FC<SoftPointsProps> = memo(({
         gl_FragColor = vec4(vColor * (0.65 + core * 0.7), alpha);
       }
     `,
-  }), [blending, opacity, sizeScale]);
+  }), [blending, opacity, sizeScale, pixelRatio]);
 
   useEffect(() => () => material.dispose(), [material]);
 

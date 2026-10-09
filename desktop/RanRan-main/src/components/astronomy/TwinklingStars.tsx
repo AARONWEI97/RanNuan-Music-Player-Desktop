@@ -1,5 +1,5 @@
 import { useMemo, useEffect, memo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getBeatEnergy } from '../../services/beatEnergy';
 
@@ -67,7 +67,7 @@ function buildStarField(count: number, radius: number, depth: number): StarField
   return { pos, col, siz, phase, speed };
 }
 
-function createStarMaterial(isDark: boolean): THREE.ShaderMaterial {
+function createStarMaterial(isDark: boolean, pixelRatio: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -78,16 +78,18 @@ function createStarMaterial(isDark: boolean): THREE.ShaderMaterial {
       uTime: { value: 0 },
       uOpacity: { value: isDark ? 1 : 0.55 },
       uBeat: { value: 0 },
+      uPixelRatio: { value: pixelRatio },
     },
     vertexShader: `
       attribute float size;
       attribute float phase;
       attribute float twinkleSpeed;
-      attribute vec3 color;
+      // 注意：vertexColors:true 时 three 会自动注入 color 属性声明，手写会重复定义导致编译失败
       varying vec3 vColor;
       varying float vTwinkle;
       uniform float uTime;
       uniform float uBeat;
+      uniform float uPixelRatio;
       void main() {
         vColor = color;
         // 亮度脉动：基础 0.55；振幅随节拍能量放大（0.45 → 0.85）
@@ -95,8 +97,8 @@ function createStarMaterial(isDark: boolean): THREE.ShaderMaterial {
         float tw = max(0.08, 0.55 + amp * sin(uTime * twinkleSpeed + phase));
         vTwinkle = tw;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float pointSize = size * (0.8 + 0.5 * tw) * 30.0 * (220.0 / max(1.0, -mvPosition.z));
-        gl_PointSize = clamp(pointSize, 1.0, 22.0);
+        float pointSize = size * (0.8 + 0.5 * tw) * 3.0 * (220.0 / max(1.0, -mvPosition.z));
+        gl_PointSize = clamp(pointSize, 0.7, 4.0) * uPixelRatio;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -128,9 +130,10 @@ const TwinklingStars: React.FC<TwinklingStarsProps> = memo(({
   depth = 90,
   isDark,
 }) => {
+  const pixelRatio = useThree((state) => state.viewport.dpr);
   const field = useMemo(() => buildStarField(count, radius, depth), [count, radius, depth]);
   // isDark 进 deps：主题切换时重建材质（代价可忽略），避免在 effect 里改 hook 值
-  const material = useMemo(() => createStarMaterial(isDark), [isDark]);
+  const material = useMemo(() => createStarMaterial(isDark, pixelRatio), [isDark, pixelRatio]);
 
   useEffect(() => () => material.dispose(), [material]);
 

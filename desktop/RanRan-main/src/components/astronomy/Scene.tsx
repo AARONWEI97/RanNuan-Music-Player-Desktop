@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef, useSyncExternalStore, memo } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
@@ -35,18 +35,53 @@ export type ViewMode = 'solar' | 'spiral';
 
 const MAX_FULL_RENDER_PLANETS = 30;
 const VIRTUALIZE_DISTANCE = 160;
-const BLOOM_BASE_INTENSITY = 1.72;
+// Bloom amplifies highlights. Particle size/opacity must keep the source image
+// unsaturated even when postprocessing is disabled (see tests/universe.html).
+const BLOOM_BASE_INTENSITY = 1.15;
+const BLOOM_LUMINANCE_THRESHOLD = 0.22;
 
 // Bloom 强度随节拍能量呼吸：ref 直改 effect，不走 React 重渲染
-const BeatBloom: React.FC = () => {
+// 渐进挂载时 intensity 从 0 淡入，避免突兀闪烁
+const BeatBloom: React.FC<{ fadeIn?: boolean }> = ({ fadeIn = false }) => {
   const bloomRef = useRef<BloomEffect | null>(null);
-  useFrame(() => {
-    if (bloomRef.current) {
-      bloomRef.current.intensity = BLOOM_BASE_INTENSITY + getBeatEnergy() * 0.5;
+  // React 19 passes ref as a prop; postprocessing 3.x serializes props for its
+  // constructor key. An object ref becomes circular once it holds the effect.
+  const bindBloom = useCallback((effect: BloomEffect | null) => { bloomRef.current = effect; }, []);
+  const fadeRef = useRef(0);
+  useFrame((_, delta) => {
+    if (!bloomRef.current) return;
+    const target = BLOOM_BASE_INTENSITY + getBeatEnergy() * 0.5;
+    if (fadeIn) {
+      fadeRef.current = Math.min(fadeRef.current + delta, 1);
+      bloomRef.current.intensity = target * fadeRef.current;
+    } else {
+      bloomRef.current.intensity = target;
     }
   });
-  return <Bloom ref={bloomRef} intensity={BLOOM_BASE_INTENSITY} luminanceThreshold={0.14} luminanceSmoothing={0.78} />;
+  return <Bloom ref={bindBloom} intensity={0} luminanceThreshold={BLOOM_LUMINANCE_THRESHOLD} luminanceSmoothing={0.78} />;
 };
+
+// Read the actual context inside the R3F root. Parent DOM state crosses a
+// separate React root asynchronously and can arrive after a composer rerender.
+const ScenePostProcessing = memo(() => {
+  const gl = useThree((state) => state.gl);
+  const subscribe = useCallback((notify: () => void) => {
+    gl.domElement.addEventListener('webglcontextlost', notify);
+    gl.domElement.addEventListener('webglcontextrestored', notify);
+    return () => {
+      gl.domElement.removeEventListener('webglcontextlost', notify);
+      gl.domElement.removeEventListener('webglcontextrestored', notify);
+    };
+  }, [gl]);
+  const getSnapshot = useCallback(() => gl.getContext().isContextLost(), [gl]);
+  const lost = useSyncExternalStore(subscribe, getSnapshot);
+  if (lost) return null;
+  return <EffectComposer multisampling={0}>
+    <BeatBloom fadeIn />
+    <Vignette darkness={0.38} offset={0.26} />
+  </EffectComposer>;
+});
+ScenePostProcessing.displayName = 'ScenePostProcessing';
 
 interface SceneProps {
   photos: Photo[];
@@ -59,6 +94,7 @@ interface SceneProps {
   cinemaOpen?: boolean;
   performanceTier?: PerformanceConfig['tier'];
   compatibilityMode?: boolean;
+  contextLost?: boolean;
 }
 
 const Scene: React.FC<SceneProps> = memo(({
@@ -72,11 +108,25 @@ const Scene: React.FC<SceneProps> = memo(({
   cinemaOpen = false,
   performanceTier,
   compatibilityMode = false,
+  contextLost = false,
 }) => {
   const { camera } = useThree();
   const settings = useUiStore((s) => s.settings);
   const [constellationTextures, setConstellationTextures] = useState<Record<ConstellationKey, THREE.Texture | null>>({} as Record<ConstellationKey, THREE.Texture | null>);
   const [visiblePhotoIds, setVisiblePhotoIds] = useState<Set<string>>(new Set(photos.map((p) => p.id)));
+  // 渐进挂载：后处理延迟一帧启用，避免首帧 GPU TDR
+  const [enablePost, setEnablePost] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (compatibilityMode || contextLost) {
+      // 避免同步 setState，推迟到下一 microtask
+      queueMicrotask(() => setEnablePost(false));
+      return;
+    }
+    // 先渲染一帧稳定场景，再启后处理
+    timer = setTimeout(() => setEnablePost(true), 120);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [compatibilityMode, contextLost]);
 
   const [perfRevision, setPerfRevision] = useState(0);
   useEffect(() => {
@@ -276,11 +326,8 @@ const Scene: React.FC<SceneProps> = memo(({
         target={[0, 4, -8]}
       />
 
-      {!compatibilityMode && perfConfig.enablePostProcessing && !cinemaOpen && (
-        <EffectComposer multisampling={0}>
-          <BeatBloom />
-          <Vignette darkness={0.38} offset={0.26} />
-        </EffectComposer>
+      {!compatibilityMode && !contextLost && perfConfig.enablePostProcessing && !cinemaOpen && enablePost && (
+        <ScenePostProcessing />
       )}
     </>
   );
