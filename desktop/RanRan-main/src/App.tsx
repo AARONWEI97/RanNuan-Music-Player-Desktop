@@ -4,7 +4,6 @@ import { Calendar, Music, Gauge } from 'lucide-react';
 import { usePhotoStore } from './store/usePhotoStore';
 import { useUiStore } from './store/modules/uiStore';
 import { applyThemeToDocument, themes } from './styles/theme';
-import { dbService } from './services/database';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import MetaverseBackground from './components/3d/MetaverseBackground';
 import Navbar from './components/layout/Navbar';
@@ -27,7 +26,6 @@ function App() {
   const { 
     selectedPhotoId, 
     setSelectedPhoto, 
-    initializeDefaultAlbum,
     getFilteredPhotos 
   } = usePhotoStore();
   const { currentTheme, currentGradient, settings } = useUiStore();
@@ -156,31 +154,27 @@ function App() {
   }, [performanceTier]);
 
   useEffect(() => {
-    const initDB = async () => {
+    let cancelled = false;
+    void (async () => {
       try {
-        // 清理旧的 LocalStorage 存储，防止数据冲突
-        const legacyData = localStorage.getItem('ranran-photo-storage');
-        if (legacyData) {
-          console.log('Cleaning up legacy LocalStorage data...');
-          // 仅在初始加载且确定有旧数据时清理一次
+        // 旧目录曾写进 localStorage，只清这一份，避免和 IndexedDB 照片库抢同一个键名
+        if (localStorage.getItem('ranran-photo-storage')) {
           localStorage.removeItem('ranran-photo-storage');
-          // 只有清理后才考虑是否需要强制刷新来应用新状态
-          // window.location.reload(); 
         }
-
-        await dbService.init();
-        console.log('Database initialized successfully');
+        await usePhotoStore.getState().loadLibrary();
+        if (cancelled) return;
+        await usePhotoStore.getState().initializeDefaultAlbum();
       } catch (error) {
-        console.error('Failed to initialize database:', error);
+        console.error('Failed to load photo library:', error);
+        if (!cancelled) {
+          usePhotoStore.setState({ isLoading: false, libraryReady: true });
+        }
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-
-    initDB();
-  }, []); // 仅在挂载时运行一次
-
-  useEffect(() => {
-    initializeDefaultAlbum();
-  }, [initializeDefaultAlbum]);
+  }, []);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-dark-bg">

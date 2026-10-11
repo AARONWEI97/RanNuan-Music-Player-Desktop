@@ -43,12 +43,12 @@ function ToggleRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[.06] bg-white/[.025] px-3.5 py-3">
       <div className="flex min-w-0 items-center gap-3">
         {icon}
         <div className="min-w-0">
-          <div className="text-gray-300">{label}</div>
-          {hint && <div className="text-xs text-gray-500">{hint}</div>}
+          <div className="text-sm font-medium text-white/85">{label}</div>
+          {hint && <div className="mt-0.5 text-[11px] text-white/35">{hint}</div>}
         </div>
       </div>
       <button
@@ -108,10 +108,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="设置" size="lg">
-      <div className="space-y-8">
+    <Modal isOpen={isOpen} onClose={onClose} title="宇宙设置" size="lg">
+      <div className="space-y-6">
         <div className="space-y-4">
-          <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
             <Sparkles size={20} className="text-cyber-blue" />
             主题风格
           </h3>
@@ -124,7 +124,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   relative rounded-xl border-2 p-4 transition-all duration-300
                   ${settings.theme.id === theme.id
                     ? 'border-cyber-blue bg-cyber-blue/10'
-                    : 'border-dark-border bg-dark-card hover:border-cyber-blue/50'
+                    : 'border-white/10 bg-white/[.045] hover:border-cyber-blue/50'
                   }
                 `}
                 onClick={() => updateSettings({ theme })}
@@ -136,7 +136,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     className="h-8 w-8 rounded-full"
                     style={{ background: `linear-gradient(135deg, ${theme.primaryColor}, ${theme.secondaryColor})` }}
                   />
-                  <span className="font-cyber text-sm text-white">{theme.name}</span>
+                  <span className="text-sm font-medium text-white/85">{theme.name}</span>
                 </div>
                 <div className="flex gap-1">
                   <div className="h-4 w-4 rounded-full" style={{ backgroundColor: theme.primaryColor }} />
@@ -157,11 +157,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="space-y-4">
-          <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
             <Palette size={20} className="text-cyber-purple" />
             渐变色彩系统
           </h3>
-          <div className="cyber-glass rounded-xl p-4">
+          <div className="rounded-2xl border border-white/[.08] bg-white/[.035] p-4">
             <GradientSelector
               currentGradient={currentGradient}
               onSelectGradient={setGradient}
@@ -172,11 +172,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {isEmbedded ? (
           <div className="space-y-4">
-            <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+           <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
               <Star size={20} className="text-cyber-blue" />
               宇宙联动
             </h3>
-            <div className="cyber-glass space-y-4 rounded-xl p-4">
+            <div className="space-y-4 rounded-2xl border border-white/[.08] bg-white/[.035] p-4">
               <ToggleRow
                 icon={<Star size={20} className="text-cyber-blue" />}
                 label="歌词流星"
@@ -198,11 +198,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </div>
         ) : (
           <div className="space-y-4">
-            <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+             <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
               <Volume2 size={20} className="text-cyber-purple" />
               音频设置
             </h3>
-            <div className="cyber-glass space-y-4 rounded-xl p-4">
+            <div className="space-y-4 rounded-2xl border border-white/[.08] bg-white/[.035] p-4">
               <ToggleRow
                 icon={settings.backgroundMusic
                   ? <Volume2 size={20} className="text-cyber-blue" />
@@ -262,11 +262,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         )}
 
         <div className="space-y-4">
-          <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+           <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
             <Grid3X3 size={20} className="text-cyber-green" />
             显示设置
           </h3>
-          <div className="cyber-glass space-y-4 rounded-xl p-4">
+          <div className="space-y-4 rounded-2xl border border-white/[.08] bg-white/[.035] p-4">
             <ToggleRow
               icon={<Grid3X3 size={20} className="text-cyber-blue" />}
               label="显示轨道"
@@ -333,7 +333,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="space-y-4">
-          <h3 className="font-cyber text-lg text-white">过渡效果</h3>
+           <h3 className="text-sm font-semibold uppercase tracking-[.16em] text-white/80">过渡效果</h3>
           <div className="flex flex-wrap gap-2">
             {([
               ['fade', '淡入淡出'],
@@ -358,7 +358,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="space-y-4">
-          <h3 className="flex items-center gap-2 font-cyber text-lg text-white">
+           <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[.16em] text-white/80">
             <Download size={20} className="text-cyber-blue" />
             数据管理
           </h3>
@@ -366,7 +366,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <button
               type="button"
               onClick={() => void handleExport()}
-              className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-card px-4 py-2.5 font-cyber text-sm text-white transition-all hover:border-cyber-blue/50"
+              className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.045] px-4 py-2.5 text-sm font-medium text-white/85 transition-all hover:border-cyber-blue/50"
             >
               <Download size={16} />
               导出数据
@@ -381,7 +381,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-card px-4 py-2.5 font-cyber text-sm text-white transition-all hover:border-cyber-blue/50"
+              className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.045] px-4 py-2.5 text-sm font-medium text-white/85 transition-all hover:border-cyber-blue/50"
             >
               <Upload size={16} />
               导入数据

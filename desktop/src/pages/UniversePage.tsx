@@ -24,10 +24,12 @@ export default function UniversePage() {
       setFrameReady(true)
       return
     }
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations
-        .filter((registration) => registration.scope.includes('/ranran/'))
-        .forEach((registration) => registration.unregister())
+    navigator.serviceWorker.getRegistrations().then(async (registrations) => {
+      await Promise.all(
+        registrations
+          .filter((registration) => registration.scope.includes('/ranran/'))
+          .map((registration) => registration.unregister()),
+      )
       setFrameReady(true)
     })
   }, [])
@@ -38,7 +40,7 @@ export default function UniversePage() {
         <iframe
           ref={iframeRef}
           key={frameKey}
-          src={`/ranran/index.html?build=20261009c-${frameKey}`}
+          src={`/ranran/index.html?build=20261011b-${frameKey}`}
           title="宇宙相册"
           onLoad={() => {
             setFrameError(false)

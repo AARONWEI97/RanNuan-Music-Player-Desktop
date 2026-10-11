@@ -2,7 +2,7 @@ import { useRef, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import localforage from 'localforage';
+import { loadPhotoBlob } from '../../hooks/usePhotoUrl';
 import type { Photo } from '../../types';
 import { CONSTELLATIONS, type ConstellationKey } from './constants';
 
@@ -135,14 +135,20 @@ const ConstellationTextureLoader: React.FC<ConstellationTextureLoaderProps> = me
     let isMounted = true;
     
     const loadTexture = async () => {
-      let imageUrl = photo.url || photo.thumbnail;
-      
+      let imageUrl = photo.url || photo.thumbnail || '';
+      let objectUrl: string | null = null;
+
       if (!imageUrl && photo.id) {
-        imageUrl = await localforage.getItem<string>(`photo_${photo.id}`) || '';
+        const blob = await loadPhotoBlob(photo.id);
+        if (blob) {
+          objectUrl = URL.createObjectURL(blob);
+          imageUrl = objectUrl;
+        }
       }
-      
+
       if (imageUrl && isMounted) {
         loader.load(imageUrl, (texture) => {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
           if (isMounted) {
             texture.colorSpace = THREE.SRGBColorSpace;
             if (prevTextureRef.current) {
@@ -153,7 +159,11 @@ const ConstellationTextureLoader: React.FC<ConstellationTextureLoaderProps> = me
           } else {
             texture.dispose();
           }
+        }, undefined, () => {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
         });
+      } else if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
       }
     };
     

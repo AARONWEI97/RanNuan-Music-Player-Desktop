@@ -1,6 +1,6 @@
 import { useState, useEffect, memo } from 'react';
-import localforage from 'localforage';
 import type { Photo } from '../../types';
+import { loadPhotoBlob } from '../../hooks/usePhotoUrl';
 import { CONSTELLATIONS, type ConstellationKey } from './constants';
 
 interface ConstellationSelectorProps {
@@ -24,26 +24,34 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = memo(({ photo, isSelected,
 
   useEffect(() => {
     let isMounted = true;
-    
+    let objectUrl: string | null = null;
+
     const loadThumbnail = async () => {
       let url = photo.thumbnail || photo.url;
-      
+
       if (!url && photo.id) {
-        const storedUrl = await localforage.getItem<string>(`photo_${photo.id}`);
-        if (storedUrl) {
-          url = storedUrl;
+        const blob = await loadPhotoBlob(photo.id);
+        if (blob) {
+          const nextUrl = URL.createObjectURL(blob);
+          if (!isMounted) {
+            URL.revokeObjectURL(nextUrl);
+            return;
+          }
+          objectUrl = nextUrl;
+          url = nextUrl;
         }
       }
-      
+
       if (isMounted && url) {
         setThumbnailUrl(url);
       }
     };
-    
-    loadThumbnail();
-    
+
+    void loadThumbnail();
+
     return () => {
       isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [photo]);
 

@@ -4,8 +4,8 @@ import { useUiStore } from '../../store/modules/uiStore';
 import { getMotionPreset } from '../../utils/motionPresets';
 import { X, ChevronLeft, ChevronRight, RotateCw, Download, Trash2, Maximize2, Minimize2, Tag, Edit3, Check, Music } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import localforage from 'localforage';
 import type { Photo } from '../../types';
+import { loadPhotoBlob } from '../../hooks/usePhotoUrl';
 import { useTouchGestures } from '../../hooks/useTouchGestures';
 
 interface HolographicViewerProps {
@@ -480,27 +480,34 @@ export default function HolographicViewer({ isOpen, photoId, onClose, onPrev, on
   }, [isOpen, photoId]);
 
   useEffect(() => {
+    if (!photo) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
     const loadFullImage = async () => {
-      if (!photo) return;
-      
-      if (photo.url && photo.url.startsWith('data:')) {
-        setFullImageUrl(photo.url);
-      } else {
-        try {
-          const storedUrl = await localforage.getItem<string>(photo.id);
-          if (storedUrl) {
-            setFullImageUrl(storedUrl);
-          } else {
-            setFullImageUrl(photo.thumbnail || '');
-          }
-        } catch (err) {
-          console.error('Failed to load full image:', err);
-          setFullImageUrl(photo.thumbnail || '');
-        }
+      if (photo.url && (photo.url.startsWith('data:') || photo.url.startsWith('blob:'))) {
+        if (!cancelled) setFullImageUrl(photo.url);
+        return;
       }
+      try {
+        const blob = await loadPhotoBlob(photo.id);
+        if (cancelled) return;
+        if (blob) {
+          objectUrl = URL.createObjectURL(blob);
+          setFullImageUrl(objectUrl);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to load full image:', err);
+      }
+      if (!cancelled) setFullImageUrl(photo.thumbnail || '');
     };
 
-    loadFullImage();
+    void loadFullImage();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [photo]);
 
   useEffect(() => {

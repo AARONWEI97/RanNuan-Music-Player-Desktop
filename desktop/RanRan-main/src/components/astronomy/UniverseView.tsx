@@ -2,9 +2,9 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense, Co
 import { Gauge, Images, Orbit, Moon, Sun as SunIcon, Video, Music } from 'lucide-react';
 import { toggleHostPlayback, useUniverseHostStore } from '../../bridge/universeHost';
 import { Canvas } from '@react-three/fiber';
-import localforage from 'localforage';
 import type { Photo } from '../../types';
 import { dbService } from '../../services/database';
+import { loadPhotoBlob } from '../../hooks/usePhotoUrl';
 import { getPerformanceConfig, getStoredPerformanceTier, type PerformanceTier } from '../../utils/performance';
 import { watchWebGLContext } from '../../utils/webglRecovery';
 import { type ConstellationKey } from './constants';
@@ -218,23 +218,20 @@ const UniverseView: React.FC<UniverseViewProps> = ({ photos, onPhotoClick }) => 
 
     if (photo) {
       try {
-        let photoBlob: Blob;
+        let photoBlob: Blob | null = null;
 
-        if (photo.url && photo.url.startsWith('data:')) {
-          const response = await fetch(photo.url);
-          photoBlob = await response.blob();
-        } else if (photo.url && photo.url.startsWith('blob:')) {
+        if (photo.url && (photo.url.startsWith('data:') || photo.url.startsWith('blob:'))) {
           const response = await fetch(photo.url);
           photoBlob = await response.blob();
         } else {
-          const storedUrl = await localforage.getItem<string>(photo.id);
-          if (storedUrl) {
-            const response = await fetch(storedUrl);
-            photoBlob = await response.blob();
-          } else {
-            return;
-          }
+          photoBlob = await loadPhotoBlob(photo.id);
         }
+
+        if (!photoBlob && photo.thumbnail?.startsWith('data:')) {
+          const response = await fetch(photo.thumbnail);
+          photoBlob = await response.blob();
+        }
+        if (!photoBlob) return;
 
         await dbService.saveConstellationBackground(
           constellationKey,

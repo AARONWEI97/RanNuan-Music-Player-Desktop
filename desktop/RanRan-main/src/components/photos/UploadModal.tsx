@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Image, X, FolderOpen } from 'lucide-react';
+import { Upload, Image, X, FolderOpen, Images, CheckCircle2, AlertCircle } from 'lucide-react';
 import { usePhotoStore } from '../../store/usePhotoStore';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -21,7 +21,18 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
   const [dragActive, setDragActive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [notice, setNotice] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const appendFiles = (incoming: File[]) => {
+    const imageFiles = incoming.filter((file) => file.type.startsWith('image/'));
+    const rejected = incoming.length - imageFiles.length;
+    const remaining = Math.max(0, 20 - files.length);
+    if (rejected > 0) setNotice(String(rejected) + ' 个文件不是图片，已跳过');
+    else if (incoming.length + files.length > 20) setNotice('单次最多导入 20 张图片，已截取前 20 张');
+    else setNotice('');
+    if (remaining > 0) setFiles((prev) => [...prev, ...imageFiles.slice(0, remaining)]);
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -38,36 +49,12 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
     e.stopPropagation();
     setDragActive(false);
     
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      (file) => file.type.startsWith('image/')
-    );
-
-    if (files.length + droppedFiles.length > 20) {
-      alert('单次上传最多支持 20 张照片，已自动截取前 20 张。');
-      const remainingSlots = 20 - files.length;
-      if (remainingSlots > 0) {
-        setFiles((prev) => [...prev, ...droppedFiles.slice(0, remainingSlots)]);
-      }
-      return;
-    }
-
-    setFiles((prev) => [...prev, ...droppedFiles]);
+    appendFiles(Array.from(e.dataTransfer.files));
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files);
-      
-      if (files.length + selectedFiles.length > 20) {
-        alert('单次上传最多支持 20 张照片，已自动截取前 20 张。');
-        const remainingSlots = 20 - files.length;
-        if (remainingSlots > 0) {
-          setFiles((prev) => [...prev, ...selectedFiles.slice(0, remainingSlots)]);
-        }
-      } else {
-        setFiles((prev) => [...prev, ...selectedFiles]);
-      }
-      
+      appendFiles(Array.from(e.target.files));
       e.target.value = '';
     }
   };
@@ -125,7 +112,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
       onClose();
     } catch (error) {
       console.error('Upload critical error:', error);
-      alert('上传失败：存储空间不足或图片格式不正确，请清理浏览器缓存后重试。');
+      setNotice('上传失败：请检查存储空间和图片格式后重试');
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -137,18 +124,23 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
     setFiles([]);
     setNewAlbumName('');
     setShowNewAlbum(false);
+    setNotice('');
     onClose();
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="上传照片" size="lg">
-      <div className="space-y-6">
+    <Modal isOpen={isOpen} onClose={handleClose} title="导入照片" size="lg">
+      <div className="space-y-5">
+        <div className="flex items-center justify-between rounded-2xl border border-cyber-blue/15 bg-cyber-blue/[.06] px-4 py-3">
+          <div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-cyber-blue/15 text-cyber-blue"><Images size={18} /></div><div><p className="text-sm font-semibold text-white">把记忆带回星空</p><p className="mt-0.5 text-[11px] text-white/45">支持 JPG、PNG、GIF、WebP · 单次最多 20 张</p></div></div>
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-white/45">{files.length}/20</span>
+        </div>
         <div
           className={`
-            relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300
+            relative rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-300
             ${dragActive 
               ? 'border-cyber-blue bg-cyber-blue/10' 
-              : 'border-dark-border hover:border-cyber-blue/50'
+              : 'border-white/10 bg-white/[.025] hover:border-cyber-blue/50 hover:bg-cyber-blue/[.04]'
             }
           `}
           onDragEnter={handleDrag}
@@ -174,8 +166,8 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
             </div>
             
             <div>
-              <p className="text-lg font-cyber text-white mb-1">拖放照片到这里</p>
-              <p className="text-gray-400 text-sm">或者</p>
+              <p className="mb-1 text-lg font-semibold text-white">拖放照片到这里</p>
+              <p className="text-xs text-white/40">或从设备中选择照片</p>
             </div>
             
             <Button
@@ -186,15 +178,13 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
               选择文件
             </Button>
             
-            <p className="text-gray-500 text-xs">
-              支持 JPG, PNG, GIF, WebP 格式
-            </p>
+            <p className="text-[11px] text-white/30">原图会自动优化并保存到浏览器本地，不会上传到云端</p>
           </motion.div>
         </div>
 
         <div className="space-y-3">
-          <label className="block text-sm font-cyber text-gray-400 uppercase tracking-wider">
-            选择相册
+            <label className="block text-[11px] font-semibold uppercase tracking-[.16em] text-white/45">
+              保存位置
           </label>
           
           {showNewAlbum ? (
@@ -214,7 +204,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
               <select
                 value={selectedAlbum}
                 onChange={(e) => setSelectedAlbum(e.target.value)}
-                className="flex-1 bg-dark-card border border-dark-border rounded-lg px-4 py-3 text-white font-body focus:outline-none focus:border-cyber-blue"
+                className="flex-1 rounded-xl border border-white/10 bg-white/[.045] px-4 py-3 text-sm text-white outline-none focus:border-cyber-blue/50"
               >
                 {albums.map((album) => (
                   <option key={album.id} value={album.id}>
@@ -231,7 +221,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
 
         {files.length > 0 && (
           <div className="space-y-3">
-            <label className="block text-sm font-cyber text-gray-400 uppercase tracking-wider">
+            <label className="block text-[11px] font-semibold uppercase tracking-[.16em] text-white/45">
               已选择 {files.length} 张照片
             </label>
             
@@ -243,7 +233,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="relative aspect-square rounded-lg overflow-hidden group"
+                    className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-white/[.04]"
                   >
                     <img
                       src={URL.createObjectURL(file)}
@@ -264,10 +254,11 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
           </div>
         )}
 
+        {notice && <div className="flex items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-3 py-2 text-xs text-amber-100"><AlertCircle size={14} />{notice}</div>}
         {uploading && (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-cyber text-cyber-blue">上传进度</span>
+              <span className="flex items-center gap-2 font-medium text-cyber-blue"><CheckCircle2 size={14} />正在导入</span>
               <span className="text-white font-mono">{uploadProgress}%</span>
             </div>
             
@@ -292,7 +283,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
           </div>
         )}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 border-t border-white/10 pt-4">
           <Button variant="ghost" onClick={handleClose}>
             取消
           </Button>

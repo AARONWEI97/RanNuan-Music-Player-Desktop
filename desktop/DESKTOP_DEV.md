@@ -276,6 +276,7 @@ desktop/
 - [x] 桌面端播放桥（歌名/封面/进度/歌词 → 恒星脉冲与流星）
 - [x] 照片行星自发光铺满 + Kepler 共面公转
 - [x] 独立影院自动播放循环（进影院卸载 Canvas）
+- [x] 照片与影院视频同一套 IndexedDB 提交（`RanRanDB` v4 `libraryPhotos`，退出重进仍在；见三十六）
 - [x] 宇宙设置模块接到真实行为（主题/轨道/旋转/粒子/过渡/导入导出/歌词流星/开场/性能）
 - [ ] 星空页全息屏与 WebGL 同屏循环播放（WebView2 解码冲突，禁止用进程级浏览器参数去换）
 
@@ -2148,6 +2149,8 @@ npx tauri dev
                                                                               → revokeObjectURL 清理
 ```
 
+2026-10-11 起，照片目录不再走 Zustand persist。文件和目录一起进 `RanRanDB.libraryPhotos`，见三十六。上面这条 localforage 数据流只作历史。
+
 **收益**：
 
 | 指标 | base64 | Blob | 改善 |
@@ -2932,4 +2935,82 @@ cd desktop && grep -o "手写会重复定义" public/ranran/assets/index-*.js | 
 产物已复制到 `public/ranran`，与 `RanRan-main/dist` 的 JS SHA-256 一致；iframe 缓存号为 `20261009c`。独立浏览器已有 Service Worker 时，首次导航仍可能拿旧 index，等 SW 更新后刷新，**以页面 script 实际哈希为准**，不能只看 URL 的 build 参数。
 
 范围：本轮浏览器实测覆盖无照片/无视频的场景和主动上下文故障。尚未在用户的多台 GPU 上复测，也没有将这些结果等同于打包后的 WebView2 全场景验收。首次自然 context loss 的外部触发因素仍不能断言已全部排除。
+
+---
+
+## 三十六、宇宙相册照片持久化 & 界面整理（2026-10-11）
+
+> 今天工作区 24 个文件：16 个 RanRan 源码、`UniversePage.tsx`、`public/ranran/index.html`、`sw.js`，以及产物替换（删 `index-D2gGo8IC.js` / `index-CKqO11DD.js` / `index-BXBY1fMc.css`，换上 `index-BbNydADv.js` / `index-BAOBdJqt.css`）。
+> 照片退出重进就没了，视频还在。原因不是 WebView2 把 IndexedDB 清掉。
+
+### 36.1 照片为什么丢、视频为什么还在
+
+两条存储不是一条路。
+
+| | 视频 | 照片（今天之前） |
+|--|------|------------------|
+| 库 | `RanRanDB`（idb），版本 3 | localforage 数据库 `RanRan` |
+| 文件 | `cinemaVideos.data`，和记录在同一条 | `photos_blob` |
+| 目录 | 同一条记录里的 `name` / `createdAt` | Zustand `persist` 写到 `photos_metadata`，键 `ranran-photo-storage` |
+| 提交 | `saveCinemaVideo` 等 `put` 完成 | 文件 `await` 了，目录的 `setItem` 没有等 |
+
+`App` 一挂载就调用 `initializeDefaultAlbum()`。这时 persist 往往还没把旧目录读回来，内存里的 `photos` 仍是 `[]`。这次 `set` 会立刻把「空照片列表 + 默认相册」写进同一个键。hydrate 读到的是读事务开始时的旧目录，并且版本没变时**不会把正确列表再写回磁盘**。磁盘上最后留下的是空目录。当次会话内存里还能看到刚传的行星，退出再开就没了。
+
+二十六 / 二十七把大图从 base64 改成 Blob，解决的是单键超限。目录仍挂在 persist 上，所以「刷新丢失」会再出现。不要把照片目录放回 Zustand persist，也不要在 `loadLibrary()` 完成前写默认相册。
+
+### 36.2 现在怎么存
+
+`RanRanDB` 升到版本 4，只新增表，不动 `cinemaVideos`。
+
+| 表 | 内容 |
+|----|------|
+| `libraryPhotos` | 一条记录一张照片：`id`、名称、相册、标签、缩略图 data URL、压缩后的 `Blob` |
+| `libraryMeta` | 相册、标签、`currentAlbumId`、`legacyMigrated` |
+
+`addPhoto` 先 `await dbService.saveLibraryPhoto`，事务完成才放进内存。相册和标签用串行队列写 `libraryMeta`，每次写入时读当时的内存，避免后发的空快照盖住先发的目录。
+
+启动顺序在 `App.tsx`：清掉 localStorage 里同名的旧键 `ranran-photo-storage`（只清 localStorage，不动 IndexedDB）→ `loadLibrary()` → 再 `initializeDefaultAlbum()`。库还没就绪时不创建默认相册。
+
+读图：`loadPhotoBlob()` 先读 `libraryPhotos`，没有再看旧的 `photos_blob` 和 localforage 默认实例。`usePhotoUrl`、全息查看器、星座贴图、星座选图、星座背景保存都走这个函数。
+
+导入导出：`dataExport.ts` 从 `getLibraryPhoto` 取文件。导入先把 data URL 转成 Blob，再 `await importLibrary(...)` 整库替换。备份 JSON 的外形没变。
+
+旧数据只搬一次。`migrateLegacyPhotoLibrary` 读 `photos_metadata` 里的 `ranran-photo-storage`，再扫 `photos_blob`。目录已经丢、文件还在的，会变成「恢复的照片 N」。搬完写 `legacyMigrated: true`。之后不再扫旧 blob，所以在新库里删掉的照片不会从旧库复活。目录和文件都已经没了的，只能重新上传。
+
+### 36.3 同一批里的界面
+
+存储语义没变，只是嵌入态工具条和弹窗换了一套样式：
+
+| 文件 | 变化 |
+|------|------|
+| `Navbar.tsx` | 嵌入态顶栏标成「照片库」；搜索框可清空；独立运行时显示当前结果数 |
+| `SortControl.tsx` | 下拉改为「最新 / 最早 / 名称 A–Z / Z–A」，嵌入态用 `compact` |
+| `UploadModal.tsx` / `SettingsModal.tsx` | 导入和「宇宙设置」面板对齐同一套卡片。设置项本身没有新增 |
+| `OnboardingGuide.tsx` | 嵌入桌面端 4 步，写明音乐仍由底部播放条控制；可返回上一步 |
+| `PlanetInfoCard.tsx` | 浅色和深色共用一张全息信息卡，都显示相册名 |
+| `VideoManager.tsx` | 片库卡片和多选勾选。预览地址用 `useMemo` 创建，URL 变化时再 `revoke`，避免列表里留着已经失效的地址 |
+
+### 36.4 产物和缓存
+
+| 项 | 值 |
+|----|----|
+| iframe 缓存 | `?build=20261011b` |
+| 脚本 | `desktop/public/ranran/assets/index-BbNydADv.js` |
+| 样式 | `index-BAOBdJqt.css` |
+| 产物标记 | 包内有 `宇宙相册照片库: IndexedDB libraryPhotos` |
+
+`UniversePage` 在创建 iframe 之前会 `await` 注销作用域含 `/ranran/` 的 Service Worker。只改 `build=` 不够：旧 SW 仍可能把不带查询的 `index.html` 从预缓存里拿出来。以页面实际加载的脚本哈希为准。
+
+改 RanRan 后仍是：`npm run build` → 把 `dist` 拷到 `desktop/public/ranran` → 改 `UniversePage` 的 `build=`。这次没有重打桌面安装包。
+
+### 36.5 验证
+
+| 项目 | 结果 |
+|------|------|
+| `npx tsc --noEmit -p tsconfig.app.json`（在 `desktop/RanRan-main`） | 通过 |
+| `npm run build` | 通过 |
+| 产物拷贝与标记串 | `public/ranran` 的脚本哈希是 `index-BbNydADv.js`，标记串在包内 |
+| 上传后退出程序再进 | **没在桌面窗口里点过**。类型检查和构建不能代替这一次重启 |
+
+实机要看的就是：导入一张图，完全退出进程再开，行星还在；原来的视频还在；若旧 blob 还留着，第一次进入应出现恢复出来的照片。
 

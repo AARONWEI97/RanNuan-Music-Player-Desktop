@@ -1,17 +1,7 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Settings, 
-  Upload, 
-  FolderOpen, 
-  Tag, 
-  Search,
-  Menu,
-  X
-} from 'lucide-react';
+import { Settings, Upload, FolderOpen, Tag, Search, Menu, X, ImagePlus } from 'lucide-react';
 import { usePhotoStore } from '../../store/usePhotoStore';
-import Button from '../ui/Button';
-import Input from '../ui/Input';
 import SortControl from './SortControl';
 
 interface NavbarProps {
@@ -22,52 +12,40 @@ interface NavbarProps {
   onOpenTags: () => void;
 }
 
+const ActionButton = ({ icon, label, onClick, primary = false }: { icon: React.ReactNode; label: string; onClick: () => void; primary?: boolean }) => (
+  <button type="button" onClick={onClick} className={`group inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-cyber-blue/25 ${primary ? 'border-cyber-blue/50 bg-cyber-blue/12 text-cyber-blue hover:bg-cyber-blue/20' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-white/20 hover:bg-white/[.09] hover:text-white'}`}>
+    {icon}<span>{label}</span>
+  </button>
+);
+
+const SearchBox = ({ embedded = false }: { embedded?: boolean }) => {
+  const { searchQuery, setSearchQuery, getFilteredPhotos } = usePhotoStore();
+  const visibleCount = getFilteredPhotos().length;
+  return (
+    <div className={`group relative flex min-w-0 items-center rounded-xl border border-white/10 bg-black/25 transition focus-within:border-cyber-blue/45 focus-within:bg-black/35 ${embedded ? 'h-8 flex-1' : 'h-10 w-full max-w-[310px]'}`}>
+      <Search size={embedded ? 14 : 16} className="pointer-events-none ml-3 shrink-0 text-white/35 transition group-focus-within:text-cyber-blue" />
+      <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索照片、标签或描述" className={`min-w-0 flex-1 bg-transparent px-2 text-white outline-none placeholder:text-white/30 ${embedded ? 'text-[11px]' : 'text-xs'}`} aria-label="搜索照片、标签或描述" />
+      {searchQuery ? <button type="button" onClick={() => setSearchQuery('')} className="mr-2 rounded-md p-1 text-white/35 hover:bg-white/10 hover:text-white" aria-label="清空搜索"><X size={13} /></button> : !embedded && <span className="mr-2 hidden text-[10px] text-white/25 sm:block">{visibleCount} 项</span>}
+    </div>
+  );
+};
+
 const Navbar = memo(({ embedded = false, onOpenSettings, onOpenUpload, onOpenAlbums, onOpenTags }: NavbarProps) => {
-  const { searchQuery, setSearchQuery } = usePhotoStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-  }, [setSearchQuery]);
-
-  const toggleMobileMenu = useCallback(() => {
-    setMobileMenuOpen(prev => !prev);
-  }, []);
+  const toggleMobileMenu = useCallback(() => setMobileMenuOpen((prev) => !prev), []);
 
   if (embedded) {
     return (
-      <motion.nav
-        initial={{ y: -24, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="absolute top-0 left-0 right-0 z-40"
-        role="navigation"
-        aria-label="照片工具"
-      >
-        <div className="mx-3 mt-2 flex h-10 items-center gap-2 rounded-xl border border-cyber-blue/15 bg-black/45 px-2 backdrop-blur-md">
-          <div className="relative min-w-0 flex-1">
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
-            <input
-              value={searchQuery}
-              onChange={handleSearchChange}
-              placeholder="搜索照片"
-              className="h-8 w-full rounded-lg border border-white/10 bg-black/30 pl-8 pr-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-cyber-blue/40"
-            />
-          </div>
-          <SortControl className="shrink-0 scale-90 origin-right" />
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button type="button" onClick={onOpenUpload} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-cyber-blue hover:bg-white/10" aria-label="上传照片">
-              <Upload size={14} />
-              <span>上传</span>
-            </button>
-            <button type="button" onClick={onOpenAlbums} className="grid h-8 w-8 place-items-center rounded-lg text-white/70 hover:bg-white/10" aria-label="相册管理">
-              <FolderOpen size={15} />
-            </button>
-            <button type="button" onClick={onOpenTags} className="grid h-8 w-8 place-items-center rounded-lg text-white/70 hover:bg-white/10" aria-label="标签管理">
-              <Tag size={15} />
-            </button>
-            <button type="button" onClick={onOpenSettings} className="grid h-8 w-8 place-items-center rounded-lg text-white/70 hover:bg-white/10" aria-label="设置">
-              <Settings size={15} />
-            </button>
+      <motion.nav initial={{ y: -18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="absolute left-0 right-0 top-0 z-40" role="navigation" aria-label="照片工具">
+        <div className="mx-3 mt-3 flex min-h-12 items-center gap-2 rounded-2xl border border-white/12 bg-[#09111d]/80 px-2.5 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <div className="hidden items-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45 lg:flex"><ImagePlus size={14} className="text-cyber-blue" />照片库</div>
+          <SearchBox embedded />
+          <SortControl compact className="shrink-0" />
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" onClick={onOpenUpload} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-cyber-blue/35 bg-cyber-blue/10 px-2.5 text-[11px] font-medium text-cyber-blue hover:bg-cyber-blue/20" aria-label="上传照片"><Upload size={14} /><span className="hidden sm:inline">导入</span></button>
+            <button type="button" onClick={onOpenAlbums} className="grid h-8 w-8 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white" aria-label="相册"><FolderOpen size={15} /></button>
+            <button type="button" onClick={onOpenTags} className="grid h-8 w-8 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white" aria-label="标签"><Tag size={15} /></button>
+            <button type="button" onClick={onOpenSettings} className="grid h-8 w-8 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white" aria-label="设置"><Settings size={15} /></button>
           </div>
         </div>
       </motion.nav>
@@ -75,100 +53,18 @@ const Navbar = memo(({ embedded = false, onOpenSettings, onOpenUpload, onOpenAlb
   }
 
   return (
-    <motion.nav
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      className="fixed top-0 left-0 right-0 z-40"
-      role="navigation"
-      aria-label="主导航栏"
-    >
-      <div className="cyber-glass border-b border-cyber-blue/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <motion.div
-                className="flex items-center gap-2"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyber-blue to-cyber-purple flex items-center justify-center">
-                  <span className="text-xl font-cyber font-bold text-dark-bg">R</span>
-                </div>
-                <span className="hidden sm:block text-xl font-cyber cyber-text">RanRan</span>
-              </motion.div>
-            </div>
-
-            <div className="hidden md:flex items-center gap-4">
-              <SortControl />
-
-              <div className="relative w-64">
-                <Input
-                  placeholder="搜索照片..."
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                  icon={<Search size={18} />}
-                />
-              </div>
-              
-              <Button variant="primary" size="sm" onClick={onOpenUpload} icon={<Upload size={16} />} aria-label="上传照片">
-                上传
-              </Button>
-              
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={onOpenAlbums} icon={<FolderOpen size={18} />} aria-label="相册管理" />
-                <Button variant="ghost" size="sm" onClick={onOpenTags} icon={<Tag size={18} />} aria-label="标签管理" />
-                <Button variant="ghost" size="sm" onClick={onOpenSettings} icon={<Settings size={18} />} aria-label="设置" />
-              </div>
-            </div>
-
-            <button
-              className="md:hidden p-2 text-gray-400 hover:text-cyber-blue"
-              onClick={toggleMobileMenu}
-              aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </div>
+    <motion.nav initial={{ y: -24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed left-0 right-0 top-0 z-40" role="navigation" aria-label="主导航栏">
+      <div className="border-b border-white/[.08] bg-[#07101b]/80 shadow-lg shadow-black/10 backdrop-blur-2xl">
+        <div className="mx-auto flex min-h-[72px] max-w-7xl items-center gap-4 px-4 sm:px-6">
+          <div className="flex shrink-0 items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl border border-cyber-blue/35 bg-gradient-to-br from-cyber-blue/90 to-cyber-purple shadow-lg shadow-cyber-blue/15"><span className="font-cyber text-xl font-bold text-[#07101b]">R</span></div><div className="hidden sm:block"><div className="font-cyber text-sm font-semibold tracking-[.14em] text-white">RANRAN</div><div className="mt-0.5 text-[10px] uppercase tracking-[.18em] text-white/35">Universe library</div></div></div>
+          <div className="hidden min-w-0 flex-1 items-center justify-end gap-2 md:flex"><SearchBox /><SortControl /><ActionButton primary icon={<Upload size={16} />} label="导入照片" onClick={onOpenUpload} /><ActionButton icon={<FolderOpen size={16} />} label="相册" onClick={onOpenAlbums} /><ActionButton icon={<Tag size={16} />} label="标签" onClick={onOpenTags} /><ActionButton icon={<Settings size={16} />} label="设置" onClick={onOpenSettings} /></div>
+          <button className="ml-auto rounded-xl border border-white/10 bg-white/[.04] p-2 text-white/55 hover:text-white md:hidden" onClick={toggleMobileMenu} aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </div>
-
-      {mobileMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="md:hidden cyber-glass border-b border-cyber-blue/10"
-        >
-          <div className="px-4 py-4 space-y-4">
-            <Input
-              placeholder="搜索照片..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              icon={<Search size={18} />}
-            />
-            
-            <div className="flex justify-center gap-2">
-              <SortControl />
-            </div>
-
-            <div className="flex gap-2">
-              <Button variant="primary" size="sm" onClick={onOpenUpload} icon={<Upload size={16} />} className="flex-1">
-                上传
-              </Button>
-            </div>
-            
-            <div className="flex justify-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onOpenAlbums} icon={<FolderOpen size={18} />} />
-              <Button variant="ghost" size="sm" onClick={onOpenTags} icon={<Tag size={18} />} />
-              <Button variant="ghost" size="sm" onClick={onOpenSettings} icon={<Settings size={18} />} />
-            </div>
-          </div>
-        </motion.div>
-      )}
+      {mobileMenuOpen && <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="border-b border-white/10 bg-[#09111d]/95 p-4 shadow-2xl backdrop-blur-xl md:hidden"><div className="space-y-3"><SearchBox /><div className="flex items-center gap-2"><SortControl className="flex-1" /><ActionButton primary icon={<Upload size={15} />} label="导入" onClick={onOpenUpload} /></div><div className="grid grid-cols-3 gap-2"><ActionButton icon={<FolderOpen size={15} />} label="相册" onClick={onOpenAlbums} /><ActionButton icon={<Tag size={15} />} label="标签" onClick={onOpenTags} /><ActionButton icon={<Settings size={15} />} label="设置" onClick={onOpenSettings} /></div></div></motion.div>}
     </motion.nav>
   );
 });
 
 Navbar.displayName = 'Navbar';
-
 export default Navbar;

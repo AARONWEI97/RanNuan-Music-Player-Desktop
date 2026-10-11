@@ -77,7 +77,7 @@ src/
 │   └── ui/         # 基础通用 UI 组件 (Button, Card, Input, Modal, Toast, CyberSkeleton, OnboardingGuide, MagneticButton, PageTransition, ParallaxBackground)
 ├── bridge/         # 桌面端 iframe 桥 (protocol.ts, universeHost.ts)
 ├── hooks/          # 自定义 Hooks
-│   ├── usePhotoUrl.ts  # 统一照片URL加载（blobStorage → object URL）
+│   ├── usePhotoUrl.ts  # 统一照片 URL（libraryPhotos → 旧 blob 库 → object URL）
 │   ├── usePlanetTexture.ts  # 行星贴图（缩略图先上球，完整图替换）
 │   ├── useKeyboardShortcuts.ts  # 全局键盘快捷键（ESC/方向键/Space/Ctrl+U）
 │   ├── useTouchGestures.ts  # 移动端触摸手势（滑动/长按）
@@ -107,7 +107,7 @@ src/
 ```
 
 ## 5. 核心逻辑流转
-1. **数据初始化**：`App.tsx` 挂载时，调用 `dbService.init()` 初始化 IndexedDB，清理遗留的 LocalStorage 数据。
+1. **数据初始化**：`App.tsx` 挂载时清掉 localStorage 里的旧键 `ranran-photo-storage`，再 `loadLibrary()`。照片和视频都在 `RanRanDB`（v4 起照片在 `libraryPhotos`）。默认相册要等照片库读完再创建。
 2. **状态管理**：通过 `Zustand` 集中管理选中的照片、UI 弹窗开关、当前播放的音乐以及用户的主题配置。
 3. **3D 渲染层**：`UniverseView` 接收照片列表，用 `kepler.ts` 映射为 `PhotoPlanet`（照片自发光贴满球体）。嵌入桌面端时恒星/轨道/歌词跟随父页播放快照。
 4. **交互响应**：点击行星呼出 `HolographicViewer`；点击全息屏进入独立 HTML5 影院（同时卸载 Canvas，避免 WebView2 双解码卡死）。
@@ -172,7 +172,7 @@ src/
 | 任务 | 编号 | 状态 | 实际效果 |
 |------|------|------|----------|
 | 拆分 UniverseView 巨型组件 | P0-1 | ✅ | 2080行→352行，拆为 Sun/PhotoPlanet/SpiralGalaxy/ConstellationPattern/HologramScreen/Scene/OrbitRing/BackgroundStar/InfoPanel/ConstellationSelector 共10个独立组件 + constants.ts |
-| 统一照片 URL 加载逻辑 | P0-2 | ✅ | 新增 `hooks/usePhotoUrl.ts`，支持 blobStorage/localforage/legacy 三级回退 |
+| 统一照片 URL 加载逻辑 | P0-2 | ✅ | `hooks/usePhotoUrl.ts` 的 `loadPhotoBlob`：先 `libraryPhotos`，再旧 `photos_blob` / localforage，最后缩略图 |
 | 修复主题切换系统 | P0-3 | ✅ | App.tsx 中 useEffect 调用 applyThemeToDocument，uiStore.updateSettings 同步 currentTheme |
 | 清理冗余代码 | P0-4 | ✅ | 删除 7 个冗余文件（AstronomyModel/SolarSystemView/GalaxyView/PhotoCard/PhotoViewer/musicStore/App.optimized），更新 useStore.ts |
 | 统一视频元素管理 | P0-5 | ✅ | 曾用 `videoElementManager.ts` 单例；Phase 7 改为「封面 muted video + 进影院卸载 Canvas」，该单例已闲置，勿接回双解码 |
@@ -278,7 +278,7 @@ src/
 | 情绪化音乐推荐 | P6-10 | ⭐⭐⭐ | 音乐使用率提升 50%+ | ✅ | 新增 `services/musicRecommendation.ts`（15+ 标签映射/时间段分析/季节分析），`components/music/MusicRecommendationPanel.tsx` 推荐面板，App.tsx 右侧垂直排列浮动按钮（🎵音乐/📅时间轴/⚡侧边栏） |
 | 时光穿梭交互 | P6-13 | ⭐⭐⭐ | 回忆沉浸感提升 45%+ | ✅ | 新增 `components/photos/TimeTravel.tsx`，按年份分组照片，全屏年份视图 + 动画网格，ESC 快捷键关闭 |
 | 照片上传进度条 | P6-16 | ⭐⭐ | 用户体验提升 | ✅ | UploadModal 新增渐变动画进度条 + 百分比显示 + 当前文件索引提示，photoStore.addPhoto 支持 onProgress 回调 |
-| 照片持久化修复 | P6-17 | ⭐⭐ | 数据完整性 | ✅ | 修复刷新后照片不显示问题，initializeDefaultAlbum 异步从 blobStorage 恢复 url 字段，新上传照片 url 直接存储 base64 |
+| 照片持久化修复 | P6-17 | ⭐⭐ | 数据完整性 | ✅ | 2026-10-11：目录不再走 Zustand persist。压缩 Blob 与元数据一起写入 `RanRanDB` v4 的 `libraryPhotos`，`put` 完成才算上传成功。旧 localforage 只在 `legacyMigrated` 未置位时搬一次。详见 `desktop/DESKTOP_DEV.md` 三十六 |
 | 智能相册分类 | P6-6 | ⭐⭐⭐⭐ | 节省整理时间 70%+ | ⏳ 待实现 |
 | 3D 照片回忆录 | P6-7 | ⭐⭐⭐⭐⭐ | 独特情感表达载体 | ⏳ 待实现 |
 | 实时协作相册 | P6-8 | ⭐⭐⭐⭐ | 社交分享场景覆盖 | ⏳ 待实现 |

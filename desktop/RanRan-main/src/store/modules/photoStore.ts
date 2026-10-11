@@ -1,33 +1,15 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import localforage from 'localforage';
 import type { Photo, Album, Tag } from '../../types';
 import { compressImageInWorker } from '../../services/imageWorker';
+import { dbService, type LibraryPhotoRecord } from '../../services/database';
 
-// 创建独立的存储实例，避免污染全局配置
-const metadataStorage = localforage.createInstance({
-  name: 'RanRan',
-  storeName: 'photos_metadata', // 专门用于存储元数据
-});
+// 照片目录以前走 Zustand persist，图片二进制另存在 localforage。
+// 启动时 persist 还没读完就会把空目录写回去，退出重进后行星消失。
+// 视频能留下，是因为影院把文件和记录放进同一次 IndexedDB 提交。照片现在同样处理。
 
-const blobStorage = localforage.createInstance({
-  name: 'RanRan',
-  storeName: 'photos_blob', // 专门用于存储大图
-});
-
-// 定义异步存储适配器，用于 Zustand 持久化元数据
-const asyncStorage = createJSONStorage(() => ({
-  getItem: async (name: string) => {
-    return await metadataStorage.getItem(name);
-  },
-  setItem: async (name: string, value: string) => {
-    await metadataStorage.setItem(name, value);
-  },
-  removeItem: async (name: string) => {
-    await metadataStorage.removeItem(name);
-  },
-}));
+let libraryBoot: Promise<void> | null = null;
+let metaQueue: Promise<void> = Promise.resolve();
 
 interface PhotoState {
   photos: Photo[];
@@ -37,12 +19,14 @@ interface PhotoState {
   selectedPhotoId: string | null;
   searchQuery: string;
   isLoading: boolean;
-  layoutMode: 'galaxy'; // Force Galaxy mode
+  libraryReady: boolean;
+  layoutMode: 'galaxy';
   sortOption: 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
   filterTags: string[];
 }
 
 interface PhotoActions {
+  loadLibrary: () => Promise<void>;
   addPhoto: (file: File, albumId: string, onProgress?: (progress: number) => void) => Promise<Photo>;
   removePhoto: (id: string) => void;
   updatePhoto: (id: string, updates: Partial<Photo>) => void;
@@ -61,11 +45,26 @@ interface PhotoActions {
   toggleFilterTag: (tag: string) => void;
   clearFilters: () => void;
   getFilteredPhotos: () => Photo[];
-  initializeDefaultAlbum: () => void;
-  importLibrary: (photos: Photo[], albums: Album[], tags: Tag[]) => void;
+  initializeDefaultAlbum: () => Promise<void>;
+  importLibrary: (photos: Photo[], albums: Album[], tags: Tag[], blobs?: Record<string, Blob>) => Promise<void>;
 }
 
 export type PhotoStore = PhotoState & PhotoActions;
+
+function toPhoto(record: LibraryPhotoRecord): Photo {
+  return {
+    id: record.id,
+    url: undefined as unknown as string,
+    thumbnail: record.thumbnail,
+    name: record.name,
+    description: record.description,
+    tags: record.tags ?? [],
+    albumId: record.albumId,
+    createdAt: record.createdAt,
+    width: record.width,
+    height: record.height,
+  };
+}
 
 const compressImage = (file: File, maxWidth: number = 1920): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -76,15 +75,15 @@ const compressImage = (file: File, maxWidth: number = 1920): Promise<Blob> => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        
+
         if (width > maxWidth) {
           height = (height * maxWidth) / width;
           width = maxWidth;
         }
-        
+
         canvas.width = width;
         canvas.height = height;
-        
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.imageSmoothingEnabled = true;
@@ -120,13 +119,12 @@ const createThumbnail = (file: File, size: number = 600): Promise<string> => {
         const ratio = Math.max(size / img.width, size / img.height);
         canvas.width = img.width * ratio;
         canvas.height = img.height * ratio;
-        
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          // 恢复高质量缩略图，既然已经使用 IndexedDB，空间不再是瓶颈
           resolve(canvas.toDataURL('image/jpeg', 0.85));
         } else {
           reject(new Error('Canvas context not available'));
@@ -140,389 +138,446 @@ const createThumbnail = (file: File, size: number = 600): Promise<string> => {
   });
 };
 
-export const usePhotoStore = create<PhotoStore>()(
-  persist(
-    (set, get) => ({
-      // State
-      photos: [],
-      albums: [],
-      tags: [],
-      currentAlbumId: null,
-      selectedPhotoId: null,
-      searchQuery: '',
-      isLoading: false,
-      layoutMode: 'galaxy',
-      sortOption: 'date-desc',
-      filterTags: [],
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return null;
+  const mime = dataUrl.slice(0, comma).match(/data:(.*?);/)?.[1] || 'application/octet-stream';
+  try {
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+}
 
-      // Actions
-      addPhoto: async (file: File, albumId: string, onProgress?: (progress: number) => void) => {
-        set({ isLoading: true });
-        
-        let compressedBlob: Blob;
-        let thumbnail: string;
-        
-        try {
-          onProgress?.(10);
-          const result = await compressImageInWorker(file);
-          onProgress?.(70);
-          compressedBlob = result.compressed;   // Blob（二进制，高性能）
-          thumbnail = result.thumbnail;          // base64（用于 Zustand persist 元数据）
-        } catch {
-          onProgress?.(10);
-          const [blob, thumbUrl] = await Promise.all([
-            compressImage(file),
-            createThumbnail(file),
-          ]);
-          onProgress?.(70);
-          compressedBlob = blob;
-          thumbnail = thumbUrl;
-        }
-        
-        const photoId = uuidv4();
-        onProgress?.(80);
-        
-        // 存入 blobStorage（IndexedDB，二进制 Blob 零拷贝）
-        await blobStorage.setItem(photoId, compressedBlob);
-        onProgress?.(90);
-        
-        // 照片元数据：url 不存（大图在 blobStorage），thumbnail 存 base64（轻量预览）
-        const photo: Photo = {
-          id: photoId,
-          url: undefined as unknown as string,  // 运行时由 usePhotoUrl 从 blobStorage 取回
-          thumbnail,
-          name: file.name.replace(/\.[^/.]+$/, ''),
-          tags: [],
-          albumId,
-          createdAt: Date.now(),
-        };
-        
-        set((state) => {
-          const updatedAlbums = state.albums.map((album) =>
-            album.id === albumId
-              ? { ...album, photoCount: album.photoCount + 1 }
-              : album
-          );
-          
-          return {
-            photos: [...state.photos, photo],
-            albums: updatedAlbums,
-            isLoading: false,
-          };
-        });
-        
-        onProgress?.(100);
-        
-        return photo;
-      },
+export const usePhotoStore = create<PhotoStore>()((set, get) => {
+  const enqueueMetaSave = () => {
+    metaQueue = metaQueue.then(async () => {
+      if (!get().libraryReady) return;
+      const { albums, tags, currentAlbumId } = get();
+      await dbService.saveLibraryMeta({
+        key: 'library',
+        albums,
+        tags,
+        currentAlbumId,
+        legacyMigrated: true,
+      });
+    }).catch((error) => {
+      console.error('Failed to persist photo library metadata:', error);
+    });
+    return metaQueue;
+  };
 
-      removePhoto: (id: string) => {
+  const persistPhotoFields = (id: string) => {
+    const photo = get().photos.find((item) => item.id === id);
+    if (!photo) return;
+    void dbService.patchLibraryPhoto(id, {
+      name: photo.name,
+      description: photo.description,
+      tags: photo.tags,
+      albumId: photo.albumId,
+      thumbnail: photo.thumbnail,
+      width: photo.width,
+      height: photo.height,
+      createdAt: photo.createdAt,
+    });
+  };
+
+  return {
+    photos: [],
+    albums: [],
+    tags: [],
+    currentAlbumId: null,
+    selectedPhotoId: null,
+    searchQuery: '',
+    isLoading: true,
+    libraryReady: false,
+    layoutMode: 'galaxy',
+    sortOption: 'date-desc',
+    filterTags: [],
+
+    loadLibrary: () => {
+      if (!libraryBoot) {
+        libraryBoot = (async () => {
+          set({ isLoading: true });
+          try {
+            await dbService.init();
+            await dbService.migrateLegacyPhotoLibrary();
+            const records = await dbService.getAllLibraryPhotos();
+            const meta = await dbService.getLibraryMeta();
+            console.info(`宇宙相册照片库: IndexedDB libraryPhotos (${records.length})`);
+            set({
+              photos: records.map(toPhoto),
+              albums: meta?.albums ?? [],
+              tags: meta?.tags ?? [],
+              currentAlbumId: meta?.currentAlbumId ?? null,
+              isLoading: false,
+              libraryReady: true,
+            });
+          } catch (error) {
+            libraryBoot = null;
+            set({ isLoading: false, libraryReady: true });
+            throw error;
+          }
+        })();
+      }
+      return libraryBoot;
+    },
+
+    addPhoto: async (file: File, albumId: string, onProgress?: (progress: number) => void) => {
+      await get().loadLibrary();
+      set({ isLoading: true });
+
+      let compressedBlob: Blob;
+      let thumbnail: string;
+
+      try {
+        onProgress?.(10);
+        const result = await compressImageInWorker(file);
+        onProgress?.(70);
+        compressedBlob = result.compressed;
+        thumbnail = result.thumbnail;
+      } catch {
+        onProgress?.(10);
+        const [blob, thumbUrl] = await Promise.all([
+          compressImage(file),
+          createThumbnail(file),
+        ]);
+        onProgress?.(70);
+        compressedBlob = blob;
+        thumbnail = thumbUrl;
+      }
+
+      if (!compressedBlob || compressedBlob.size === 0) {
+        set({ isLoading: false });
+        throw new Error('图片压缩结果为空');
+      }
+
+      const photoId = uuidv4();
+      onProgress?.(80);
+      const photo: Photo = {
+        id: photoId,
+        url: undefined as unknown as string,
+        thumbnail,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        tags: [],
+        albumId,
+        createdAt: Date.now(),
+      };
+
+      await dbService.saveLibraryPhoto({
+        id: photo.id,
+        name: photo.name,
+        tags: photo.tags,
+        albumId: photo.albumId,
+        createdAt: photo.createdAt,
+        thumbnail: photo.thumbnail,
+        data: compressedBlob,
+      });
+      onProgress?.(90);
+
+      set((state) => ({
+        photos: [...state.photos, photo],
+        albums: state.albums.map((album) =>
+          album.id === albumId
+            ? { ...album, photoCount: album.photoCount + 1 }
+            : album
+        ),
+        isLoading: false,
+      }));
+      await enqueueMetaSave();
+      onProgress?.(100);
+      return photo;
+    },
+
+    removePhoto: (id: string) => {
+      void (async () => {
+        await dbService.deleteLibraryPhoto(id);
         set((state) => {
-          const photo = state.photos.find((p) => p.id === id);
-          const updatedAlbums = state.albums.map((album) =>
-            album.id === photo?.albumId
-              ? { ...album, photoCount: Math.max(0, album.photoCount - 1) }
-              : album
-          );
-          
-          localforage.removeItem(id);
-          blobStorage.removeItem(id);
-          
+          const photo = state.photos.find((item) => item.id === id);
           return {
-            photos: state.photos.filter((p) => p.id !== id),
-            albums: updatedAlbums,
+            photos: state.photos.filter((item) => item.id !== id),
+            albums: state.albums.map((album) =>
+              album.id === photo?.albumId
+                ? { ...album, photoCount: Math.max(0, album.photoCount - 1) }
+                : album
+            ),
             selectedPhotoId: state.selectedPhotoId === id ? null : state.selectedPhotoId,
           };
         });
-      },
+        await enqueueMetaSave();
+      })();
+    },
 
-      updatePhoto: (id: string, updates: Partial<Photo>) => {
-        set((state) => ({
-          photos: state.photos.map((photo) =>
-            photo.id === id ? { ...photo, ...updates } : photo
-          ),
-        }));
-      },
+    updatePhoto: (id: string, updates: Partial<Photo>) => {
+      set((state) => ({
+        photos: state.photos.map((photo) =>
+          photo.id === id ? { ...photo, ...updates } : photo
+        ),
+      }));
+      persistPhotoFields(id);
+    },
 
-      addAlbum: (name: string, description?: string) => {
-        const album: Album = {
-          id: uuidv4(),
-          name,
-          description,
-          createdAt: Date.now(),
-          photoCount: 0,
-        };
-        
-        set((state) => ({
-          albums: [...state.albums, album],
-        }));
-        
-        return album;
-      },
+    addAlbum: (name: string, description?: string) => {
+      const album: Album = {
+        id: uuidv4(),
+        name,
+        description,
+        createdAt: Date.now(),
+        photoCount: 0,
+      };
+      set((state) => ({
+        albums: [...state.albums, album],
+      }));
+      void enqueueMetaSave();
+      return album;
+    },
 
-      removeAlbum: (id: string) => {
-        set((state) => {
-          const photosToRemove = state.photos.filter((p) => p.albumId === id);
-          photosToRemove.forEach((p) => {
-             localforage.removeItem(p.id);
-             blobStorage.removeItem(p.id);
+    removeAlbum: (id: string) => {
+      const doomed = get().photos.filter((photo) => photo.albumId === id).map((photo) => photo.id);
+      set((state) => ({
+        albums: state.albums.filter((album) => album.id !== id),
+        photos: state.photos.filter((photo) => photo.albumId !== id),
+        currentAlbumId: state.currentAlbumId === id ? null : state.currentAlbumId,
+      }));
+      void (async () => {
+        for (const photoId of doomed) {
+          await dbService.deleteLibraryPhoto(photoId);
+        }
+        await enqueueMetaSave();
+      })();
+    },
+
+    updateAlbum: (id: string, updates: Partial<Album>) => {
+      set((state) => ({
+        albums: state.albums.map((album) =>
+          album.id === id ? { ...album, ...updates } : album
+        ),
+      }));
+      void enqueueMetaSave();
+    },
+
+    addTag: (name: string, color: string) => {
+      const tag: Tag = {
+        id: uuidv4(),
+        name,
+        color,
+        count: 0,
+      };
+      set((state) => ({
+        tags: [...state.tags, tag],
+      }));
+      void enqueueMetaSave();
+      return tag;
+    },
+
+    removeTag: (id: string) => {
+      set((state) => ({
+        tags: state.tags.filter((tag) => tag.id !== id),
+        photos: state.photos.map((photo) => ({
+          ...photo,
+          tags: photo.tags.filter((tagId) => tagId !== id),
+        })),
+      }));
+      void (async () => {
+        for (const photo of get().photos) {
+          await dbService.patchLibraryPhoto(photo.id, { tags: photo.tags });
+        }
+        await enqueueMetaSave();
+      })();
+    },
+
+    createTag: (name: string) => {
+      const id = uuidv4();
+      const colors = ['#00f5ff', '#ff2d75', '#39ff14', '#ff6b35', '#b829dd'];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const tag: Tag = { id, name, color, count: 0 };
+      set((state) => ({ tags: [...state.tags, tag] }));
+      void enqueueMetaSave();
+      return tag;
+    },
+
+    addTagToPhoto: (photoId: string, tagName: string) => {
+      set((state) => ({
+        photos: state.photos.map((photo) => {
+          if (photo.id !== photoId) return photo;
+          if (photo.tags.includes(tagName)) return photo;
+          return { ...photo, tags: [...photo.tags, tagName] };
+        }),
+      }));
+      persistPhotoFields(photoId);
+    },
+
+    removeTagFromPhoto: (photoId: string, tagName: string) => {
+      set((state) => ({
+        photos: state.photos.map((photo) => {
+          if (photo.id !== photoId) return photo;
+          return { ...photo, tags: photo.tags.filter((tag) => tag !== tagName) };
+        }),
+      }));
+      persistPhotoFields(photoId);
+    },
+
+    setCurrentAlbum: (albumId: string | null) => {
+      set({ currentAlbumId: albumId });
+      void enqueueMetaSave();
+    },
+
+    setSelectedPhoto: (photoId: string | null) => {
+      set({ selectedPhotoId: photoId });
+    },
+
+    setSearchQuery: (query: string) => {
+      set({ searchQuery: query });
+    },
+
+    setSortOption: (option: 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc') => {
+      set({ sortOption: option });
+    },
+
+    toggleFilterTag: (tag: string) => {
+      set((state) => ({
+        filterTags: state.filterTags.includes(tag)
+          ? state.filterTags.filter((item) => item !== tag)
+          : [...state.filterTags, tag],
+      }));
+    },
+
+    clearFilters: () => {
+      set({ filterTags: [], searchQuery: '' });
+    },
+
+    getFilteredPhotos: () => {
+      const { photos, currentAlbumId, searchQuery, sortOption, filterTags } = get();
+      let filtered = photos;
+
+      if (currentAlbumId) {
+        filtered = filtered.filter((photo) => photo.albumId === currentAlbumId);
+      }
+
+      if (filterTags && filterTags.length > 0) {
+        filtered = filtered.filter((photo) =>
+          filterTags.every((tag) => photo.tags.includes(tag))
+        );
+      }
+
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        filtered = filtered.filter(
+          (photo) =>
+            photo.name.toLowerCase().includes(query) ||
+            photo.description?.toLowerCase().includes(query) ||
+            photo.tags.some((tag) => tag.toLowerCase().includes(query))
+        );
+      }
+
+      return filtered.sort((a, b) => {
+        switch (sortOption) {
+          case 'date-asc':
+            return a.createdAt - b.createdAt;
+          case 'name-asc':
+            return a.name.localeCompare(b.name);
+          case 'name-desc':
+            return b.name.localeCompare(a.name);
+          case 'date-desc':
+          default:
+            return b.createdAt - a.createdAt;
+        }
+      });
+    },
+
+    importLibrary: async (photos, albums, tags, blobs = {}) => {
+      await get().loadLibrary();
+      const incoming = Array.isArray(photos) ? photos : [];
+      const records: LibraryPhotoRecord[] = [];
+      for (const photo of incoming) {
+        let data: Blob | undefined = blobs[photo.id];
+        if ((!data || data.size === 0) && photo.thumbnail?.startsWith('data:')) {
+          data = dataUrlToBlob(photo.thumbnail) ?? undefined;
+        }
+        if (!data || data.size === 0) {
+          const existing = await dbService.getLibraryPhoto(photo.id);
+          if (existing?.data?.size) data = existing.data;
+        }
+        if (!data || data.size === 0) continue;
+        records.push({
+          id: photo.id,
+          name: photo.name,
+          description: photo.description,
+          tags: Array.isArray(photo.tags) ? photo.tags : [],
+          albumId: photo.albumId,
+          createdAt: photo.createdAt || Date.now(),
+          width: photo.width,
+          height: photo.height,
+          thumbnail: photo.thumbnail,
+          data,
+        });
+      }
+
+      const fallbackAlbum: Album = {
+        id: 'default',
+        name: '我的狗狗',
+        description: '默认相册',
+        createdAt: Date.now(),
+        photoCount: records.length,
+      };
+      const nextAlbums = (albums.length ? albums : [fallbackAlbum]).map((album) => ({
+        ...album,
+        photoCount: records.filter((photo) => photo.albumId === album.id).length,
+      }));
+      const known = new Set(nextAlbums.map((album) => album.id));
+      records.forEach((photo) => {
+        if (photo.albumId && !known.has(photo.albumId)) {
+          known.add(photo.albumId);
+          nextAlbums.push({
+            id: photo.albumId,
+            name: '导入相册',
+            createdAt: Date.now(),
+            photoCount: records.filter((item) => item.albumId === photo.albumId).length,
           });
-          
-          return {
-            albums: state.albums.filter((a) => a.id !== id),
-            photos: state.photos.filter((p) => p.albumId !== id),
-            currentAlbumId: state.currentAlbumId === id ? null : state.currentAlbumId,
-          };
-        });
-      },
-
-      updateAlbum: (id: string, updates: Partial<Album>) => {
-        set((state) => ({
-          albums: state.albums.map((album) =>
-            album.id === id ? { ...album, ...updates } : album
-          ),
-        }));
-      },
-
-      addTag: (name: string, color: string) => {
-        const tag: Tag = {
-          id: uuidv4(),
-          name,
-          color,
-          count: 0,
-        };
-        
-        set((state) => ({
-          tags: [...state.tags, tag],
-        }));
-        
-        return tag;
-      },
-
-      removeTag: (id: string) => {
-        set((state) => ({
-          tags: state.tags.filter((t) => t.id !== id),
-          photos: state.photos.map((photo) => ({
-            ...photo,
-            tags: photo.tags.filter((tagId) => tagId !== id),
-          })),
-        }));
-      },
-
-      createTag: (name: string) => {
-        const id = uuidv4();
-        const colors = ['#00f5ff', '#ff2d75', '#39ff14', '#ff6b35', '#b829dd'];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        const tag: Tag = { id, name, color, count: 0 };
-        set((state) => ({ tags: [...state.tags, tag] }));
-        return tag;
-      },
-
-      addTagToPhoto: (photoId: string, tagName: string) => {
-        set((state) => ({
-          photos: state.photos.map((photo) => {
-            if (photo.id !== photoId) return photo;
-            if (photo.tags.includes(tagName)) return photo;
-            return { ...photo, tags: [...photo.tags, tagName] };
-          }),
-        }));
-      },
-
-      removeTagFromPhoto: (photoId: string, tagName: string) => {
-        set((state) => ({
-          photos: state.photos.map((photo) => {
-            if (photo.id !== photoId) return photo;
-            return { ...photo, tags: photo.tags.filter(t => t !== tagName) };
-          }),
-        }));
-      },
-
-      setCurrentAlbum: (albumId: string | null) => {
-        set({ currentAlbumId: albumId });
-      },
-
-      setSelectedPhoto: (photoId: string | null) => {
-        set({ selectedPhotoId: photoId });
-      },
-
-      setSearchQuery: (query: string) => {
-        set({ searchQuery: query });
-      },
-
-      /* setLayoutMode: (mode: 'galaxy') => {
-        set({ layoutMode: mode });
-      }, */
-
-      setSortOption: (option: 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc') => {
-        set({ sortOption: option });
-      },
-
-      toggleFilterTag: (tag: string) => {
-        set((state) => ({
-          filterTags: state.filterTags.includes(tag)
-            ? state.filterTags.filter((t) => t !== tag)
-            : [...state.filterTags, tag],
-        }));
-      },
-
-      clearFilters: () => {
-        set({ filterTags: [], searchQuery: '' });
-      },
-
-      getFilteredPhotos: () => {
-        const { photos, currentAlbumId, searchQuery, sortOption, filterTags } = get();
-        
-        let filtered = photos;
-        
-        if (currentAlbumId) {
-          filtered = filtered.filter((p) => p.albumId === currentAlbumId);
         }
-        
-        if (filterTags && filterTags.length > 0) {
-          filtered = filtered.filter((p) => 
-            filterTags.every((tag) => p.tags.includes(tag))
-          );
-        }
-        
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase();
-          filtered = filtered.filter(
-            (p) =>
-              p.name.toLowerCase().includes(query) ||
-              p.description?.toLowerCase().includes(query) ||
-              p.tags.some((t) => t.toLowerCase().includes(query))
-          );
-        }
-        
-        return filtered.sort((a, b) => {
-          switch (sortOption) {
-            case 'date-asc':
-              return a.createdAt - b.createdAt;
-            case 'name-asc':
-              return a.name.localeCompare(b.name);
-            case 'name-desc':
-              return b.name.localeCompare(a.name);
-            case 'date-desc':
-            default:
-              return b.createdAt - a.createdAt;
-          }
-        });
-      },
+      });
+      const nextTags = Array.isArray(tags) ? tags : [];
+      await dbService.replaceLibrary(records, {
+        key: 'library',
+        albums: nextAlbums,
+        tags: nextTags,
+        currentAlbumId: null,
+        legacyMigrated: true,
+      });
+      set({
+        photos: records.map(toPhoto),
+        albums: nextAlbums,
+        tags: nextTags,
+        currentAlbumId: null,
+        selectedPhotoId: null,
+        searchQuery: '',
+        filterTags: [],
+        libraryReady: true,
+        isLoading: false,
+      });
+    },
 
-      importLibrary: (photos, albums, tags) => {
-        const nextPhotos = Array.isArray(photos) ? photos : [];
-        const fallbackAlbum: Album = {
+    initializeDefaultAlbum: async () => {
+      const { libraryReady, albums, currentAlbumId } = get();
+      if (!libraryReady) return;
+
+      if (albums.length === 0) {
+        const defaultAlbum: Album = {
           id: 'default',
           name: '我的狗狗',
           description: '默认相册',
           createdAt: Date.now(),
-          photoCount: nextPhotos.length,
+          photoCount: 0,
         };
-        const nextAlbums = (albums.length ? albums : [fallbackAlbum]).map((album) => ({
-          ...album,
-          photoCount: nextPhotos.filter((photo) => photo.albumId === album.id).length,
-        }));
-        const known = new Set(nextAlbums.map((album) => album.id));
-        nextPhotos.forEach((photo) => {
-          if (photo.albumId && !known.has(photo.albumId)) {
-            known.add(photo.albumId);
-            nextAlbums.push({
-              id: photo.albumId,
-              name: '导入相册',
-              createdAt: Date.now(),
-              photoCount: nextPhotos.filter((item) => item.albumId === photo.albumId).length,
-            });
-          }
-        });
-        set({
-          photos: nextPhotos,
-          albums: nextAlbums,
-          tags: Array.isArray(tags) ? tags : [],
-          currentAlbumId: null,
-          selectedPhotoId: null,
-          searchQuery: '',
-          filterTags: [],
-        });
-      },
-
-      initializeDefaultAlbum: () => {
-        const { albums, photos, currentAlbumId } = get();
-        
-        if (albums.length === 0) {
-          const defaultAlbum: Album = {
-            id: 'default',
-            name: '我的狗狗',
-            description: '默认相册',
-            createdAt: Date.now(),
-            photoCount: 0,
-          };
-          set({ albums: [defaultAlbum], currentAlbumId: 'default' });
-        } else if (currentAlbumId && !albums.some((album) => album.id === currentAlbumId)) {
-          set({ currentAlbumId: albums[0].id });
-        }
-        
-        // URL 恢复：通过 usePhotoUrl hook 自动从 blobStorage 取回 Blob，
-        // 这里仅做验证日志，确保照片数据完整性
-        const verifyBlobs = async () => {
-          const photosWithoutUrl = photos.filter(p => !p.url);
-          for (const photo of photosWithoutUrl) {
-            try {
-              const hasBlob = await blobStorage.getItem<Blob>(photo.id);
-              if (!hasBlob && photo.thumbnail) {
-                console.warn('Photo blob missing, using thumbnail:', photo.id);
-                const fallback = photo.thumbnail || '';
-                set((state) => ({
-                  photos: state.photos.map(p => 
-                    p.id === photo.id ? { ...p, url: fallback } : p
-                  ),
-                }));
-              }
-            } catch {
-              // blobStorage 不可用时降级到缩略图
-              if (photo.thumbnail?.startsWith('data:image/')) {
-                const fallback = photo.thumbnail || '';
-                set((state) => ({
-                  photos: state.photos.map(p => 
-                    p.id === photo.id ? { ...p, url: fallback } : p
-                  ),
-                }));
-              }
-            }
-          }
-        };
-        
-        verifyBlobs();
-      },
-    }),
-    {
-      name: 'ranran-photo-storage',
-      version: 2, // v2: 剥离 url 字段，避免大 base64 导致 persist 失败
-      storage: asyncStorage, // 使用异步 IndexedDB 存储元数据，解决 5MB 限制问题
-      partialize: (state) => ({
-        // 剥离 url 字段（base64 大图已存入 blobStorage），避免单 key 存储超限导致 persist 静默失败
-        // thumbnail 保留用于快速预览，usePhotoUrl hook + initializeDefaultAlbum 负责从 blobStorage 恢复 url
-        photos: state.photos.map(({ url, ...rest }) => rest as Photo),
-        albums: state.albums,
-        tags: state.tags,
-        currentAlbumId: state.currentAlbumId,
-        layoutMode: state.layoutMode,
-      }),
-      // rehydrate 完成后触发 URL 恢复，确保照片在刷新后正确加载
-      onRehydrateStorage: () => {
-        return (state, error) => {
-          if (error) {
-            console.error('Photo store rehydration failed:', error);
-            return;
-          }
-          if (state?.photos?.length) {
-            // 延迟执行，确保 store 已完全就绪
-            setTimeout(() => {
-              const store = usePhotoStore.getState();
-              store.initializeDefaultAlbum();
-            }, 100);
-          }
-        };
-      },
-    }
-  )
-);
+        set({ albums: [defaultAlbum], currentAlbumId: 'default' });
+        await enqueueMetaSave();
+      } else if (currentAlbumId && !albums.some((album) => album.id === currentAlbumId)) {
+        set({ currentAlbumId: albums[0].id });
+        await enqueueMetaSave();
+      }
+    },
+  };
+});

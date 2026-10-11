@@ -1,5 +1,7 @@
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase } from 'idb';
+import localforage from 'localforage';
+import type { Album, Photo, Tag } from '../types';
 
 interface CachedFile {
   id: string;
@@ -53,6 +55,27 @@ interface CinemaVideo {
   lastAccessed: number;
 }
 
+export interface LibraryPhotoRecord {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  albumId: string;
+  createdAt: number;
+  width?: number;
+  height?: number;
+  thumbnail?: string;
+  data: Blob;
+}
+
+export interface LibraryMetaRecord {
+  key: 'library';
+  albums: Album[];
+  tags: Tag[];
+  currentAlbumId: string | null;
+  legacyMigrated?: boolean;
+}
+
 interface RanRanDB extends DBSchema {
   files: {
     key: string;
@@ -86,10 +109,21 @@ interface RanRanDB extends DBSchema {
       'by-created': number;
     };
   };
+  libraryPhotos: {
+    key: string;
+    value: LibraryPhotoRecord;
+    indexes: {
+      'by-created': number;
+    };
+  };
+  libraryMeta: {
+    key: string;
+    value: LibraryMetaRecord;
+  };
 }
 
 const DB_NAME = 'RanRanDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 class DatabaseService {
   private db: IDBPDatabase<RanRanDB> | null = null;
@@ -130,6 +164,15 @@ class DatabaseService {
             if (!db.objectStoreNames.contains('cinemaVideos')) {
               const videoStore = db.createObjectStore('cinemaVideos', { keyPath: 'id' });
               videoStore.createIndex('by-created', 'createdAt');
+            }
+
+            if (!db.objectStoreNames.contains('libraryPhotos')) {
+              const photoStore = db.createObjectStore('libraryPhotos', { keyPath: 'id' });
+              photoStore.createIndex('by-created', 'createdAt');
+            }
+
+            if (!db.objectStoreNames.contains('libraryMeta')) {
+              db.createObjectStore('libraryMeta', { keyPath: 'key' });
             }
           }
         });
@@ -588,6 +631,247 @@ class DatabaseService {
     
     return oldMusic.length;
   }
+
+  async saveLibraryPhoto(record: LibraryPhotoRecord): Promise<void> {
+    await this.ensureInitialized();
+    await this.db!.put('libraryPhotos', record);
+  }
+
+  async getLibraryPhoto(id: string): Promise<LibraryPhotoRecord | undefined> {
+    await this.ensureInitialized();
+    return this.db!.get('libraryPhotos', id);
+  }
+
+  async getAllLibraryPhotos(): Promise<LibraryPhotoRecord[]> {
+    await this.ensureInitialized();
+    return this.db!.getAll('libraryPhotos');
+  }
+
+  async deleteLibraryPhoto(id: string): Promise<void> {
+    await this.ensureInitialized();
+    await this.db!.delete('libraryPhotos', id);
+  }
+
+  async patchLibraryPhoto(
+    id: string,
+    updates: Partial<Omit<LibraryPhotoRecord, 'id' | 'data'>> & { data?: Blob },
+  ): Promise<void> {
+    await this.ensureInitialized();
+    const current = await this.db!.get('libraryPhotos', id);
+    if (!current) return;
+    const defined = Object.fromEntries(
+      Object.entries(updates).filter(([, value]) => value !== undefined),
+    ) as Partial<LibraryPhotoRecord>;
+    await this.db!.put('libraryPhotos', {
+      ...current,
+      ...defined,
+      id,
+      data: defined.data ?? current.data,
+    });
+  }
+
+  async getLibraryMeta(): Promise<LibraryMetaRecord | undefined> {
+    await this.ensureInitialized();
+    return this.db!.get('libraryMeta', 'library');
+  }
+
+  async saveLibraryMeta(record: LibraryMetaRecord): Promise<void> {
+    await this.ensureInitialized();
+    await this.db!.put('libraryMeta', record);
+  }
+
+  async replaceLibrary(photos: LibraryPhotoRecord[], meta: LibraryMetaRecord): Promise<void> {
+    await this.ensureInitialized();
+    const existingIds = await this.db!.getAllKeys('libraryPhotos');
+    const tx = this.db!.transaction(['libraryPhotos', 'libraryMeta'], 'readwrite');
+    for (const id of existingIds) {
+      await tx.objectStore('libraryPhotos').delete(id);
+    }
+    for (const photo of photos) {
+      await tx.objectStore('libraryPhotos').put(photo);
+    }
+    await tx.objectStore('libraryMeta').put(meta);
+    await tx.done;
+  }
+
+  /**
+   * 旧照片库把目录放在 Zustand persist（localforage photos_metadata），
+   * 文件放在另一个 store。目录写入没有和文件放进同一次已提交事务，
+   * 启动时还可能用空目录覆盖。这里把还能读到的旧数据搬进 libraryPhotos，只搬一次。
+   */
+  async migrateLegacyPhotoLibrary(): Promise<void> {
+    await this.ensureInitialized();
+    const currentMeta = await this.db!.get('libraryMeta', 'library');
+    if (currentMeta?.legacyMigrated) return;
+
+    const metadataStorage = localforage.createInstance({
+      name: 'RanRan',
+      storeName: 'photos_metadata',
+    });
+    const blobStorage = localforage.createInstance({
+      name: 'RanRan',
+      storeName: 'photos_blob',
+    });
+
+    const legacy = readLegacyPhotoState(await metadataStorage.getItem('ranran-photo-storage'));
+    const existing = await this.db!.getAll('libraryPhotos');
+    const known = new Set(existing.map((photo) => photo.id));
+    const albums = [...(currentMeta?.albums ?? legacy?.albums ?? [])];
+    const tags = currentMeta?.tags?.length ? currentMeta.tags : (legacy?.tags ?? []);
+    let currentAlbumId = currentMeta?.currentAlbumId ?? legacy?.currentAlbumId ?? null;
+
+    const rememberAlbum = (albumId: string) => {
+      if (!albumId || albums.some((album) => album.id === albumId)) return;
+      albums.push({
+        id: albumId,
+        name: albumId === 'default' ? '我的狗狗' : '导入相册',
+        description: albumId === 'default' ? '默认相册' : undefined,
+        createdAt: Date.now(),
+        photoCount: 0,
+      });
+    };
+
+    const saveRecovered = async (photo: Photo, data: Blob | null) => {
+      if (!data || data.size === 0 || known.has(photo.id)) return;
+      const albumId = photo.albumId || 'default';
+      rememberAlbum(albumId);
+      await this.db!.put('libraryPhotos', {
+        id: photo.id,
+        name: photo.name || '未命名照片',
+        description: photo.description,
+        tags: Array.isArray(photo.tags) ? photo.tags : [],
+        albumId,
+        createdAt: photo.createdAt || Date.now(),
+        width: photo.width,
+        height: photo.height,
+        thumbnail: photo.thumbnail,
+        data,
+      });
+      known.add(photo.id);
+    };
+
+    for (const photo of legacy?.photos ?? []) {
+      try {
+        await saveRecovered(photo, await readLegacyBlob(blobStorage, localforage, photo));
+      } catch (error) {
+        console.warn('Skipped legacy photo during migration:', photo.id, error);
+      }
+    }
+
+    try {
+      const blobKeys = await blobStorage.keys();
+      let orphanIndex = 0;
+      for (const key of blobKeys) {
+        if (known.has(key)) continue;
+        try {
+          const data = await blobFromUnknown(await blobStorage.getItem(key));
+          orphanIndex += 1;
+          await saveRecovered({
+            id: key,
+            url: '',
+            name: `恢复的照片 ${orphanIndex}`,
+            tags: [],
+            albumId: 'default',
+            createdAt: Date.now(),
+          }, data);
+        } catch (error) {
+          console.warn('Skipped orphan photo blob:', key, error);
+        }
+      }
+    } catch (error) {
+      console.warn('Legacy photo blob store was not readable:', error);
+    }
+
+    const photos = await this.db!.getAll('libraryPhotos');
+    const albumsWithCount = albums.map((album) => ({
+      ...album,
+      photoCount: photos.filter((photo) => photo.albumId === album.id).length,
+    }));
+    if (!currentAlbumId && albumsWithCount.length > 0) currentAlbumId = albumsWithCount[0].id;
+
+    await this.db!.put('libraryMeta', {
+      key: 'library',
+      albums: albumsWithCount,
+      tags,
+      currentAlbumId,
+      legacyMigrated: true,
+    });
+  }
+}
+
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return null;
+  const mime = dataUrl.slice(0, comma).match(/data:(.*?);/)?.[1] || 'application/octet-stream';
+  try {
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+async function blobFromUnknown(value: unknown): Promise<Blob | null> {
+  if (value instanceof Blob) return value.size > 0 ? value : null;
+  if (typeof value === 'string' && value.startsWith('data:')) return dataUrlToBlob(value);
+  return null;
+}
+
+async function readLegacyBlob(
+  blobStorage: typeof localforage,
+  fallback: typeof localforage,
+  photo: Photo,
+): Promise<Blob | null> {
+  const stored = await blobFromUnknown(await blobStorage.getItem(photo.id));
+  if (stored) return stored;
+  const fromDefault = await blobFromUnknown(await fallback.getItem(photo.id));
+  if (fromDefault) return fromDefault;
+  const prefixed = await blobFromUnknown(await fallback.getItem(`photo_${photo.id}`));
+  if (prefixed) return prefixed;
+  if (photo.thumbnail?.startsWith('data:')) return dataUrlToBlob(photo.thumbnail);
+  return null;
+}
+
+function unwrapJson(raw: unknown): unknown {
+  let value = raw;
+  for (let i = 0; i < 2 && typeof value === 'string'; i += 1) {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      break;
+    }
+  }
+  return value;
+}
+
+function readLegacyPhotoState(raw: unknown): {
+  photos: Photo[];
+  albums: Album[];
+  tags: Tag[];
+  currentAlbumId: string | null;
+} | null {
+  const value = unwrapJson(raw);
+  if (!value || typeof value !== 'object') return null;
+  const record = value as {
+    state?: { photos?: Photo[]; albums?: Album[]; tags?: Tag[]; currentAlbumId?: string | null };
+    photos?: Photo[];
+    albums?: Album[];
+    tags?: Tag[];
+    currentAlbumId?: string | null;
+  };
+  const state = record.state ?? record;
+  const photos = Array.isArray(state.photos) ? state.photos : [];
+  const albums = Array.isArray(state.albums) ? state.albums : [];
+  const tags = Array.isArray(state.tags) ? state.tags : [];
+  if (photos.length === 0 && albums.length === 0 && tags.length === 0) return null;
+  return {
+    photos,
+    albums,
+    tags,
+    currentAlbumId: state.currentAlbumId ?? null,
+  };
 }
 
 export const dbService = new DatabaseService();

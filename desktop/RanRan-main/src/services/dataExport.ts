@@ -1,14 +1,9 @@
-import localforage from 'localforage';
 import type { Album, AppSettings, Photo, Tag } from '../types';
 import { mergeAppSettings } from '../types';
 import type { GradientName } from '../styles/theme';
 import { usePhotoStore } from '../store/usePhotoStore';
 import { useUiStore } from '../store/modules/uiStore';
-
-const blobStorage = localforage.createInstance({
-  name: 'RanRan',
-  storeName: 'photos_blob',
-});
+import { dbService } from './database';
 
 export interface ExportData {
   version: string;
@@ -59,8 +54,8 @@ export async function exportAllData(): Promise<ExportData> {
 
   for (const photo of photos) {
     try {
-      const stored = await blobStorage.getItem(photo.id);
-      const encoded = await serializeBlob(stored);
+      const stored = await dbService.getLibraryPhoto(photo.id);
+      const encoded = await serializeBlob(stored?.data);
       if (encoded) {
         blobs[photo.id] = encoded;
       } else if (photo.thumbnail?.startsWith('data:')) {
@@ -95,25 +90,26 @@ export async function importData(data: ExportData): Promise<{
     throw new Error('无效的备份文件格式');
   }
 
+  const blobs: Record<string, Blob> = {};
   let importedBlobs = 0;
   if (data.blobs) {
     for (const [key, value] of Object.entries(data.blobs)) {
       try {
-        const payload = typeof value === 'string' && value.startsWith('data:')
-          ? dataUrlToBlob(value)
-          : value;
-        await blobStorage.setItem(key, payload);
-        importedBlobs += 1;
+        if (typeof value === 'string' && value.startsWith('data:')) {
+          blobs[key] = dataUrlToBlob(value);
+          importedBlobs += 1;
+        }
       } catch {
         // 单张失败不阻断整包导入
       }
     }
   }
 
-  usePhotoStore.getState().importLibrary(
+  await usePhotoStore.getState().importLibrary(
     data.photos,
     data.albums || [],
     data.tags || [],
+    blobs,
   );
 
   if (data.settings) {
