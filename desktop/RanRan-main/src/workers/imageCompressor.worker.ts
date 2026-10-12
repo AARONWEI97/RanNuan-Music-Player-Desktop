@@ -1,20 +1,12 @@
-interface CompressMessage {
-  type: 'compress';
+interface PrepareMessage {
+  id: number;
+  type: 'prepare';
   fileData: ArrayBuffer;
-  fileName: string;
   maxWidth: number;
   quality: number;
+  thumbnailSize: number;
+  thumbnailQuality: number;
 }
-
-interface ThumbnailMessage {
-  type: 'thumbnail';
-  fileData: ArrayBuffer;
-  fileName: string;
-  size: number;
-  quality: number;
-}
-
-type WorkerMessage = CompressMessage | ThumbnailMessage;
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -24,117 +16,70 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number):
         else reject(new Error('Canvas toBlob failed'));
       },
       type,
-      quality
+      quality,
     );
   });
 }
 
-function compressImageInWorker(
-  fileData: ArrayBuffer,
-  maxWidth: number,
-  quality: number
-): Promise<Blob> {
+function loadImage(fileData: ArrayBuffer): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([fileData]);
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    
-    img.onload = async () => {
+    const url = URL.createObjectURL(new Blob([fileData]));
+    const image = new Image();
+    image.onload = () => {
       URL.revokeObjectURL(url);
-      
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width;
-        width = maxWidth;
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, width, height);
-        try {
-          const result = await canvasToBlob(canvas, 'image/jpeg', quality);
-          resolve(result);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        reject(new Error('Canvas context not available'));
-      }
+      resolve(image);
     };
-    
-    img.onerror = () => {
+    image.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error('Failed to load image'));
     };
-    
-    img.src = url;
+    image.src = url;
   });
 }
 
-function createThumbnailInWorker(
-  fileData: ArrayBuffer,
-  size: number,
-  quality: number
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const blob = new Blob([fileData]);
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      
-      const canvas = document.createElement('canvas');
-      const ratio = Math.max(size / img.width, size / img.height);
-      canvas.width = img.width * ratio;
-      canvas.height = img.height * ratio;
-      
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      } else {
-        reject(new Error('Canvas context not available'));
-      }
-    };
-    
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image'));
-    };
-    
-    img.src = url;
-  });
+async function compressFromImage(image: HTMLImageElement, maxWidth: number, quality: number): Promise<Blob> {
+  const canvas = document.createElement('canvas');
+  let width = image.width;
+  let height = image.height;
+  if (width > maxWidth) {
+    height = (height * maxWidth) / width;
+    width = maxWidth;
+  }
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context not available');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvasToBlob(canvas, 'image/jpeg', quality);
 }
 
-self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
+function thumbnailFromImage(image: HTMLImageElement, size: number, quality: number): string {
+  const canvas = document.createElement('canvas');
+  const ratio = Math.max(size / image.width, size / image.height);
+  canvas.width = image.width * ratio;
+  canvas.height = image.height * ratio;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context not available');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'medium';
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+self.onmessage = async (event: MessageEvent<PrepareMessage>) => {
+  const { id, fileData, maxWidth, quality, thumbnailSize, thumbnailQuality } = event.data;
   try {
-    const { type, fileData } = e.data;
-    
-    if (type === 'compress') {
-      const { maxWidth, quality } = e.data;
-      const compressedBlob = await compressImageInWorker(fileData, maxWidth, quality);
-      // 通过 postMessage 传输 Blob（structured clone，零拷贝）
-      self.postMessage({ type: 'compress', result: compressedBlob });
-    } else if (type === 'thumbnail') {
-      const { size, quality } = e.data;
-      const thumbnailBase64 = await createThumbnailInWorker(fileData, size, quality);
-      self.postMessage({ type: 'thumbnail', result: thumbnailBase64 });
-    }
+    const image = await loadImage(fileData);
+    const compressed = await compressFromImage(image, maxWidth, quality);
+    const thumbnail = thumbnailFromImage(image, thumbnailSize, thumbnailQuality);
+    self.postMessage({ id, type: 'prepare', compressed, thumbnail });
   } catch (error) {
-    self.postMessage({ 
-      type: 'error', 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+    self.postMessage({
+      id,
+      type: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 };

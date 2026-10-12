@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Upload, Image, X, FolderOpen, Images, CheckCircle2, AlertCircle } from 'lucide-react';
 import { usePhotoStore } from '../../store/usePhotoStore';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Modal from '../ui/Modal';
+
+const MAX_IMPORT = 500;
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -12,10 +14,11 @@ interface UploadModalProps {
 }
 
 export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
-  const { albums, currentAlbumId, addPhoto, addAlbum } = usePhotoStore();
+  const { albums, photos, currentAlbumId, addPhotos, addAlbum } = usePhotoStore();
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<string>(currentAlbumId || 'default');
+  const wasOpen = useRef(false);
   const [newAlbumName, setNewAlbumName] = useState('');
   const [showNewAlbum, setShowNewAlbum] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -24,12 +27,33 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
   const [notice, setNotice] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!isOpen || wasOpen.current) {
+      wasOpen.current = isOpen;
+      return;
+    }
+    wasOpen.current = true;
+    const selectedStillExists = Boolean(currentAlbumId && albums.some((album) => album.id === currentAlbumId));
+    if (selectedStillExists && currentAlbumId) setSelectedAlbum(currentAlbumId);
+    else if (albums.some((album) => album.id === 'default')) setSelectedAlbum('default');
+    else if (albums[0]) setSelectedAlbum(albums[0].id);
+  }, [isOpen, albums, currentAlbumId]);
+
+  const previewUrls = useMemo(
+    () => files.slice(0, 12).map((file) => ({ name: file.name, url: URL.createObjectURL(file) })),
+    [files],
+  );
+  useEffect(() => () => {
+    previewUrls.forEach((item) => URL.revokeObjectURL(item.url));
+  }, [previewUrls]);
+
   const appendFiles = (incoming: File[]) => {
+    if (uploading) return;
     const imageFiles = incoming.filter((file) => file.type.startsWith('image/'));
     const rejected = incoming.length - imageFiles.length;
-    const remaining = Math.max(0, 20 - files.length);
-    if (rejected > 0) setNotice(String(rejected) + ' 个文件不是图片，已跳过');
-    else if (incoming.length + files.length > 20) setNotice('单次最多导入 20 张图片，已截取前 20 张');
+    const remaining = Math.max(0, MAX_IMPORT - files.length);
+    if (rejected > 0) setNotice(`${rejected} 个文件不是图片，已跳过`);
+    else if (incoming.length + files.length > MAX_IMPORT) setNotice(`单次最多导入 ${MAX_IMPORT} 张，已截取前面的照片`);
     else setNotice('');
     if (remaining > 0) setFiles((prev) => [...prev, ...imageFiles.slice(0, remaining)]);
   };
@@ -82,33 +106,21 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
       setUploading(true);
       setUploadProgress(0);
       setCurrentFileIndex(0);
-      
-      const BATCH_SIZE = 1;
-      
-      for (let i = 0; i < files.length; i += BATCH_SIZE) {
-        const chunk = files.slice(i, i + BATCH_SIZE);
-        setCurrentFileIndex(i);
-        
-        await Promise.all(chunk.map(async (file) => {
-          try {
-            await addPhoto(file, albumId, (progress: number) => {
-              const fileProgress = (i / files.length) * 100 + (progress / 100) * (100 / files.length);
-              setUploadProgress(Math.round(fileProgress));
-            });
-            await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (err) {
-            console.error(`Failed to upload ${file.name}:`, err);
-          }
-        }));
+      const batch = files;
+      const result = await addPhotos(batch, albumId, (done, total) => {
+        setCurrentFileIndex(done);
+        setUploadProgress(Math.round((done / Math.max(total, 1)) * 100));
+      });
+      const failedFiles = new Set(result.failed.map((index) => batch[index]).filter((file): file is File => Boolean(file)));
+      if (failedFiles.size > 0) {
+        setFiles((current) => current.filter((file) => failedFiles.has(file)));
+        setNotice(`${failedFiles.size} 张没有写入，已留在列表里，可以再试一次`);
+        return;
       }
-      
-      setUploadProgress(100);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       setFiles([]);
       setNewAlbumName('');
       setShowNewAlbum(false);
-      
       onClose();
     } catch (error) {
       console.error('Upload critical error:', error);
@@ -132,8 +144,8 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
     <Modal isOpen={isOpen} onClose={handleClose} title="导入照片" size="lg">
       <div className="space-y-5">
         <div className="flex items-center justify-between rounded-2xl border border-cyber-blue/15 bg-cyber-blue/[.06] px-4 py-3">
-          <div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-cyber-blue/15 text-cyber-blue"><Images size={18} /></div><div><p className="text-sm font-semibold text-white">把记忆带回星空</p><p className="mt-0.5 text-[11px] text-white/45">支持 JPG、PNG、GIF、WebP · 单次最多 20 张</p></div></div>
-          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-white/45">{files.length}/20</span>
+          <div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-cyber-blue/15 text-cyber-blue"><Images size={18} /></div><div><p className="text-sm font-semibold text-white">把记忆带回星空</p><p className="mt-0.5 text-[11px] text-white/45">支持 JPG、PNG、GIF、WebP · 单次最多 {MAX_IMPORT} 张，分批写入</p></div></div>
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-white/45">{files.length}/{MAX_IMPORT}</span>
         </div>
         <div
           className={`
@@ -208,7 +220,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
               >
                 {albums.map((album) => (
                   <option key={album.id} value={album.id}>
-                    {album.name} ({album.photoCount})
+                    {album.name}（{photos.filter((photo) => photo.albumId === album.id).length}）
                   </option>
                 ))}
               </select>
@@ -221,36 +233,31 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
 
         {files.length > 0 && (
           <div className="space-y-3">
-            <label className="block text-[11px] font-semibold uppercase tracking-[.16em] text-white/45">
-              已选择 {files.length} 张照片
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-[11px] font-semibold uppercase tracking-[.16em] text-white/45">
+                已选择 {files.length} 张照片
+              </label>
+              <button type="button" onClick={() => setFiles([])} disabled={uploading} className="text-[11px] text-white/40 hover:text-white disabled:opacity-40">清空</button>
+            </div>
             
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto">
-              <AnimatePresence>
-                {files.map((file, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-white/[.04]"
+              {previewUrls.map((item, index) => (
+                <div key={`${item.name}-${index}`} className="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-white/[.04]">
+                  <img src={item.url} alt={item.name} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-cyber-pink"
+                    onClick={() => removeFile(index)}
+                    disabled={uploading}
                   >
-                    <img
-                      src={URL.createObjectURL(file)}
-                      alt={file.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-cyber-pink rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => removeFile(index)}
-                    >
-                      <X size={12} className="text-white" />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                    <X size={12} className="text-white" />
+                  </button>
+                </div>
+              ))}
             </div>
+            {files.length > previewUrls.length && (
+              <p className="text-[11px] text-white/40">还有 {files.length - previewUrls.length} 张不在预览里，导入时会一并写入。</p>
+            )}
           </div>
         )}
 
@@ -276,9 +283,7 @@ export default function UploadModal({ isOpen, onClose }: UploadModalProps) {
             </div>
             
             <p className="text-xs text-gray-400 text-center">
-              {uploadProgress < 100
-                ? `正在上传第 ${currentFileIndex + 1}/${files.length} 张照片...`
-                : '上传完成！'}
+              正在处理 {currentFileIndex}/{files.length} 张。
             </p>
           </div>
         )}

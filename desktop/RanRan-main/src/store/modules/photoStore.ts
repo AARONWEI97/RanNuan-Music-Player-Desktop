@@ -10,6 +10,22 @@ import { dbService, type LibraryPhotoRecord } from '../../services/database';
 
 let libraryBoot: Promise<void> | null = null;
 let metaQueue: Promise<void> = Promise.resolve();
+let pendingDeleteIds = new Set<string>();
+let deleteScheduled = false;
+
+const WRITE_BATCH = 24;
+const COMPRESS_CONCURRENCY = 3;
+
+function recountAlbums(albums: Album[], photos: Photo[]): Album[] {
+  const counts = new Map<string, number>();
+  photos.forEach((photo) => {
+    counts.set(photo.albumId, (counts.get(photo.albumId) ?? 0) + 1);
+  });
+  return albums.map((album) => {
+    const photoCount = counts.get(album.id) ?? 0;
+    return album.photoCount === photoCount ? album : { ...album, photoCount };
+  });
+}
 
 interface PhotoState {
   photos: Photo[];
@@ -28,7 +44,10 @@ interface PhotoState {
 interface PhotoActions {
   loadLibrary: () => Promise<void>;
   addPhoto: (file: File, albumId: string, onProgress?: (progress: number) => void) => Promise<Photo>;
+  addPhotos: (files: File[], albumId: string, onProgress?: (done: number, total: number) => void) => Promise<{ photos: Photo[]; failed: number[] }>;
   removePhoto: (id: string) => void;
+  removePhotos: (ids: string[]) => void;
+  movePhotos: (ids: string[], albumId: string) => Promise<void>;
   updatePhoto: (id: string, updates: Partial<Photo>) => void;
   addAlbum: (name: string, description?: string) => Album;
   removeAlbum: (id: string) => void;
@@ -227,88 +246,143 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => {
     },
 
     addPhoto: async (file: File, albumId: string, onProgress?: (progress: number) => void) => {
-      await get().loadLibrary();
-      set({ isLoading: true });
-
-      let compressedBlob: Blob;
-      let thumbnail: string;
-
-      try {
-        onProgress?.(10);
-        const result = await compressImageInWorker(file);
-        onProgress?.(70);
-        compressedBlob = result.compressed;
-        thumbnail = result.thumbnail;
-      } catch {
-        onProgress?.(10);
-        const [blob, thumbUrl] = await Promise.all([
-          compressImage(file),
-          createThumbnail(file),
-        ]);
-        onProgress?.(70);
-        compressedBlob = blob;
-        thumbnail = thumbUrl;
-      }
-
-      if (!compressedBlob || compressedBlob.size === 0) {
-        set({ isLoading: false });
-        throw new Error('图片压缩结果为空');
-      }
-
-      const photoId = uuidv4();
-      onProgress?.(80);
-      const photo: Photo = {
-        id: photoId,
-        url: undefined as unknown as string,
-        thumbnail,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        tags: [],
-        albumId,
-        createdAt: Date.now(),
-      };
-
-      await dbService.saveLibraryPhoto({
-        id: photo.id,
-        name: photo.name,
-        tags: photo.tags,
-        albumId: photo.albumId,
-        createdAt: photo.createdAt,
-        thumbnail: photo.thumbnail,
-        data: compressedBlob,
+      const result = await get().addPhotos([file], albumId, (done, total) => {
+        onProgress?.(Math.round((done / Math.max(total, 1)) * 100));
       });
-      onProgress?.(90);
-
-      set((state) => ({
-        photos: [...state.photos, photo],
-        albums: state.albums.map((album) =>
-          album.id === albumId
-            ? { ...album, photoCount: album.photoCount + 1 }
-            : album
-        ),
-        isLoading: false,
-      }));
-      await enqueueMetaSave();
-      onProgress?.(100);
+      const photo = result.photos[0];
+      if (!photo) throw new Error('图片压缩结果为空');
       return photo;
     },
 
-    removePhoto: (id: string) => {
-      void (async () => {
-        await dbService.deleteLibraryPhoto(id);
+    addPhotos: async (files, albumId, onProgress) => {
+      await get().loadLibrary();
+      const total = files.length;
+      const started = Date.now();
+      const saved: Photo[] = [];
+      const failed: number[] = [];
+      const pendingRecords: LibraryPhotoRecord[] = [];
+      const pendingPhotos: Photo[] = [];
+      let cursor = 0;
+      let completed = 0;
+      let flushChain: Promise<void> = Promise.resolve();
+
+      const prepare = async (file: File, createdAt: number) => {
+        let compressedBlob: Blob;
+        let thumbnail: string;
+        try {
+          const result = await compressImageInWorker(file);
+          compressedBlob = result.compressed;
+          thumbnail = result.thumbnail;
+        } catch {
+          compressedBlob = await compressImage(file);
+          thumbnail = await createThumbnail(file);
+        }
+        if (!compressedBlob || compressedBlob.size === 0) throw new Error('图片压缩结果为空');
+        const photo: Photo = {
+          id: uuidv4(),
+          url: undefined as unknown as string,
+          thumbnail,
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          tags: [],
+          albumId,
+          createdAt,
+        };
+        const record: LibraryPhotoRecord = {
+          id: photo.id,
+          name: photo.name,
+          tags: photo.tags,
+          albumId,
+          createdAt,
+          thumbnail,
+          data: compressedBlob,
+        };
+        return { photo, record };
+      };
+
+      const flush = () => {
+        flushChain = flushChain.then(async () => {
+          if (pendingRecords.length === 0) return;
+          const records = pendingRecords.splice(0, pendingRecords.length);
+          const batch = pendingPhotos.splice(0, pendingPhotos.length);
+          await dbService.putLibraryPhotos(records);
+          saved.push(...batch);
+        });
+        return flushChain;
+      };
+
+      const run = async () => {
+        while (cursor < files.length) {
+          const index = cursor;
+          cursor += 1;
+          const file = files[index];
+          try {
+            const prepared = await prepare(file, started + index);
+            pendingRecords.push(prepared.record);
+            pendingPhotos.push(prepared.photo);
+            if (pendingRecords.length >= WRITE_BATCH) await flush();
+          } catch (error) {
+            failed.push(index);
+            console.error(`Failed to import ${file.name}:`, error);
+          } finally {
+            completed += 1;
+            onProgress?.(completed, total);
+          }
+        }
+      };
+
+      const workers = Math.min(COMPRESS_CONCURRENCY, Math.max(files.length, 1));
+      await Promise.all(Array.from({ length: workers }, () => run()));
+      await flush();
+      if (saved.length > 0) {
         set((state) => {
-          const photo = state.photos.find((item) => item.id === id);
-          return {
-            photos: state.photos.filter((item) => item.id !== id),
-            albums: state.albums.map((album) =>
-              album.id === photo?.albumId
-                ? { ...album, photoCount: Math.max(0, album.photoCount - 1) }
-                : album
-            ),
-            selectedPhotoId: state.selectedPhotoId === id ? null : state.selectedPhotoId,
-          };
+          const photos = [...state.photos, ...saved];
+          return { photos, albums: recountAlbums(state.albums, photos) };
         });
         await enqueueMetaSave();
-      })();
+      }
+      return { photos: saved, failed };
+    },
+
+    removePhotos: (ids: string[]) => {
+      ids.forEach((id) => pendingDeleteIds.add(id));
+      if (deleteScheduled) return;
+      deleteScheduled = true;
+      queueMicrotask(() => {
+        deleteScheduled = false;
+        const batch = [...pendingDeleteIds];
+        pendingDeleteIds = new Set();
+        if (batch.length === 0) return;
+        const idSet = new Set(batch);
+        set((state) => {
+          const photos = state.photos.filter((photo) => !idSet.has(photo.id));
+          return {
+            photos,
+            albums: recountAlbums(state.albums, photos),
+            selectedPhotoId: state.selectedPhotoId && idSet.has(state.selectedPhotoId) ? null : state.selectedPhotoId,
+          };
+        });
+        void (async () => {
+          await dbService.deleteLibraryPhotos(batch);
+          await enqueueMetaSave();
+        })();
+      });
+    },
+
+    removePhoto: (id: string) => {
+      get().removePhotos([id]);
+    },
+
+    movePhotos: async (ids, albumId) => {
+      const idSet = new Set(ids);
+      if (idSet.size === 0) return;
+      set((state) => {
+        const photos = state.photos.map((photo) => (
+          idSet.has(photo.id) ? { ...photo, albumId } : photo
+        ));
+        return { photos, albums: recountAlbums(state.albums, photos) };
+      });
+      await dbService.patchLibraryPhotos([...idSet].map((id) => ({ id, patch: { albumId } })));
+      await enqueueMetaSave();
     },
 
     updatePhoto: (id: string, updates: Partial<Photo>) => {
@@ -343,9 +417,7 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => {
         currentAlbumId: state.currentAlbumId === id ? null : state.currentAlbumId,
       }));
       void (async () => {
-        for (const photoId of doomed) {
-          await dbService.deleteLibraryPhoto(photoId);
-        }
+        if (doomed.length > 0) await dbService.deleteLibraryPhotos(doomed);
         await enqueueMetaSave();
       })();
     },
@@ -374,6 +446,7 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => {
     },
 
     removeTag: (id: string) => {
+      const affected = get().photos.filter((photo) => photo.tags.includes(id));
       set((state) => ({
         tags: state.tags.filter((tag) => tag.id !== id),
         photos: state.photos.map((photo) => ({
@@ -382,9 +455,10 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => {
         })),
       }));
       void (async () => {
-        for (const photo of get().photos) {
-          await dbService.patchLibraryPhoto(photo.id, { tags: photo.tags });
-        }
+        await dbService.patchLibraryPhotos(affected.map((photo) => ({
+          id: photo.id,
+          patch: { tags: photo.tags.filter((tagId) => tagId !== id) },
+        })));
         await enqueueMetaSave();
       })();
     },

@@ -1,17 +1,57 @@
 interface CompressResult {
-  compressed: Blob;   // 大图存 Blob（二进制，比 base64 小 ~33%）
-  thumbnail: string;  // 缩略图存 base64（小，用于 Zustand persist 元数据）
+  compressed: Blob;
+  thumbnail: string;
 }
 
-let worker: Worker | null = null;
+interface WorkerResponse {
+  id: number;
+  type: 'prepare' | 'error';
+  compressed?: Blob;
+  thumbnail?: string;
+  error?: string;
+}
 
-function getWorker(): Worker {
-  if (!worker) {
-    worker = new Worker(
+const POOL_SIZE = 3;
+const workers: Worker[] = [];
+let roundRobin = 0;
+let nextJobId = 1;
+const pending = new Map<number, {
+  worker: Worker;
+  resolve: (result: CompressResult) => void;
+  reject: (error: Error) => void;
+}>();
+
+function attach(worker: Worker) {
+  worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
+    const job = pending.get(event.data.id);
+    if (!job) return;
+    pending.delete(event.data.id);
+    if (event.data.type === 'error' || !event.data.compressed || !event.data.thumbnail) {
+      job.reject(new Error(event.data.error || '图片压缩失败'));
+      return;
+    }
+    job.resolve({ compressed: event.data.compressed, thumbnail: event.data.thumbnail });
+  });
+  worker.addEventListener('error', () => {
+    [...pending.entries()].forEach(([id, job]) => {
+      if (job.worker !== worker) return;
+      pending.delete(id);
+      job.reject(new Error('图片压缩线程中断'));
+    });
+  });
+}
+
+function takeWorker(): Worker {
+  if (workers.length < POOL_SIZE) {
+    const worker = new Worker(
       new URL('../workers/imageCompressor.worker.ts', import.meta.url),
-      { type: 'module' }
+      { type: 'module' },
     );
+    attach(worker);
+    workers.push(worker);
   }
+  const worker = workers[roundRobin % workers.length];
+  roundRobin += 1;
   return worker;
 }
 
@@ -20,60 +60,36 @@ export function compressImageInWorker(
   maxWidth: number = 1920,
   thumbnailSize: number = 600,
   compressQuality: number = 0.7,
-  thumbnailQuality: number = 0.85
+  thumbnailQuality: number = 0.85,
 ): Promise<CompressResult> {
-  return new Promise(async (resolve, reject) => {
-    const w = getWorker();
-    
-    const fileData = await file.arrayBuffer();
-    
-    let compressResult: Blob | null = null;
-    let thumbnailResult: string | null = null;
-    
-    const handleMessage = (e: MessageEvent) => {
-      const { type, result, error } = e.data;
-      
-      if (type === 'error') {
-        w.removeEventListener('message', handleMessage);
-        reject(new Error(error));
-        return;
-      }
-      
-      if (type === 'compress') {
-        compressResult = result as Blob;
-      } else if (type === 'thumbnail') {
-        thumbnailResult = result as string;
-      }
-      
-      if (compressResult !== null && thumbnailResult !== null) {
-        w.removeEventListener('message', handleMessage);
-        resolve({ compressed: compressResult, thumbnail: thumbnailResult });
-      }
-    };
-    
-    w.addEventListener('message', handleMessage);
-    
-    w.postMessage({
-      type: 'compress',
-      fileData,
-      fileName: file.name,
-      maxWidth,
-      quality: compressQuality,
-    });
-    
-    w.postMessage({
-      type: 'thumbnail',
-      fileData,
-      fileName: file.name,
-      size: thumbnailSize,
-      quality: thumbnailQuality,
+  return new Promise((resolve, reject) => {
+    const id = nextJobId;
+    nextJobId += 1;
+    const worker = takeWorker();
+    pending.set(id, { worker, resolve, reject });
+    file.arrayBuffer().then((fileData) => {
+      worker.postMessage(
+        {
+          id,
+          type: 'prepare',
+          fileData,
+          maxWidth,
+          quality: compressQuality,
+          thumbnailSize,
+          thumbnailQuality,
+        },
+        [fileData],
+      );
+    }).catch((error: unknown) => {
+      pending.delete(id);
+      reject(error instanceof Error ? error : new Error('无法读取图片'));
     });
   });
 }
 
 export function terminateWorker(): void {
-  if (worker) {
-    worker.terminate();
-    worker = null;
-  }
+  pending.forEach((job) => job.reject(new Error('图片压缩已取消')));
+  pending.clear();
+  workers.forEach((worker) => worker.terminate());
+  workers.length = 0;
 }

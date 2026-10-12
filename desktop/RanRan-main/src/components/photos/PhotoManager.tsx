@@ -103,7 +103,7 @@ const PhotoItem: React.FC<PhotoItemProps> = memo(({
 PhotoItem.displayName = 'PhotoItem';
 
 const PhotoManager: React.FC<PhotoManagerProps> = ({ isOpen, onClose }) => {
-  const { photos, albums, removePhoto } = usePhotoStore();
+  const { photos, albums, removePhotos } = usePhotoStore();
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(new Set());
   const [filterAlbumId, setFilterAlbumId] = useState<string | null>(null);
 
@@ -114,13 +114,13 @@ const PhotoManager: React.FC<PhotoManagerProps> = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   const handleDelete = useCallback((id: string) => {
-    removePhoto(id);
+    removePhotos([id]);
     setSelectedPhotoIds(prev => {
       const newSet = new Set(prev);
       newSet.delete(id);
       return newSet;
     });
-  }, [removePhoto]);
+  }, [removePhotos]);
 
   const handleSelect = useCallback((id: string) => {
     setSelectedPhotoIds(prev => {
@@ -135,11 +135,9 @@ const PhotoManager: React.FC<PhotoManagerProps> = ({ isOpen, onClose }) => {
   }, []);
 
   const handleDeleteSelected = useCallback(() => {
-    selectedPhotoIds.forEach(id => {
-      removePhoto(id);
-    });
+    removePhotos([...selectedPhotoIds]);
     setSelectedPhotoIds(new Set());
-  }, [selectedPhotoIds, removePhoto]);
+  }, [selectedPhotoIds, removePhotos]);
 
   const handleSelectAll = useCallback(() => {
     const filteredPhotos = filterAlbumId 

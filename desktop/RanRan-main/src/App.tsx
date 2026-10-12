@@ -197,7 +197,7 @@ function App() {
         </main>
       </div>
 
-      <Sidebar isOpen={showSidebar} onClose={() => setShowSidebar(false)} />
+      <Sidebar isOpen={showSidebar} onClose={() => setShowSidebar(false)} onOpenPhoto={handlePhotoClick} />
       
       <UploadModal isOpen={showUpload} onClose={() => setShowUpload(false)} />
       

@@ -40,7 +40,7 @@ export default function UniversePage() {
         <iframe
           ref={iframeRef}
           key={frameKey}
-          src={`/ranran/index.html?build=20261011b-${frameKey}`}
+          src={`/ranran/index.html?build=20261012b-${frameKey}`}
           title="宇宙相册"
           onLoad={() => {
             setFrameError(false)

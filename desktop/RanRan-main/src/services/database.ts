@@ -648,8 +648,59 @@ class DatabaseService {
   }
 
   async deleteLibraryPhoto(id: string): Promise<void> {
+    await this.deleteLibraryPhotos([id]);
+  }
+
+  async putLibraryPhotos(records: LibraryPhotoRecord[]): Promise<void> {
     await this.ensureInitialized();
-    await this.db!.delete('libraryPhotos', id);
+    const chunkSize = 40;
+    for (let index = 0; index < records.length; index += chunkSize) {
+      const slice = records.slice(index, index + chunkSize);
+      const tx = this.db!.transaction('libraryPhotos', 'readwrite');
+      slice.forEach((record) => {
+        void tx.store.put(record);
+      });
+      await tx.done;
+    }
+  }
+
+  async deleteLibraryPhotos(ids: string[]): Promise<void> {
+    await this.ensureInitialized();
+    const unique = [...new Set(ids)];
+    const chunkSize = 200;
+    for (let index = 0; index < unique.length; index += chunkSize) {
+      const slice = unique.slice(index, index + chunkSize);
+      const tx = this.db!.transaction('libraryPhotos', 'readwrite');
+      slice.forEach((id) => {
+        void tx.store.delete(id);
+      });
+      await tx.done;
+    }
+  }
+
+  async patchLibraryPhotos(
+    items: { id: string; patch: Partial<Omit<LibraryPhotoRecord, 'id' | 'data'>> }[],
+  ): Promise<void> {
+    await this.ensureInitialized();
+    const chunkSize = 40;
+    for (let index = 0; index < items.length; index += chunkSize) {
+      const slice = items.slice(index, index + chunkSize);
+      const tx = this.db!.transaction('libraryPhotos', 'readwrite');
+      for (const item of slice) {
+        const current = await tx.store.get(item.id);
+        if (!current) continue;
+        const defined = Object.fromEntries(
+          Object.entries(item.patch).filter(([, value]) => value !== undefined),
+        );
+        void tx.store.put({
+          ...current,
+          ...defined,
+          id: current.id,
+          data: current.data,
+        });
+      }
+      await tx.done;
+    }
   }
 
   async patchLibraryPhoto(
@@ -684,13 +735,14 @@ class DatabaseService {
     await this.ensureInitialized();
     const existingIds = await this.db!.getAllKeys('libraryPhotos');
     const tx = this.db!.transaction(['libraryPhotos', 'libraryMeta'], 'readwrite');
-    for (const id of existingIds) {
-      await tx.objectStore('libraryPhotos').delete(id);
-    }
-    for (const photo of photos) {
-      await tx.objectStore('libraryPhotos').put(photo);
-    }
-    await tx.objectStore('libraryMeta').put(meta);
+    const photoStore = tx.objectStore('libraryPhotos');
+    existingIds.forEach((id) => {
+      void photoStore.delete(id);
+    });
+    photos.forEach((photo) => {
+      void photoStore.put(photo);
+    });
+    void tx.objectStore('libraryMeta').put(meta);
     await tx.done;
   }
 
