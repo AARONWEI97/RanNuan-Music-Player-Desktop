@@ -1,3 +1,4 @@
+import { ArtistLinks } from '@/components/common/MusicLinks'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -13,10 +14,10 @@ import {
 type SearchTab = 1 | 100 | 10 | 1000 | 1002 | 1004 | 1006 | 1009 | 1014
 
 interface ArtistResult { id: number; name: string; picUrl?: string; alias?: string[] }
-interface AlbumResult { id: number; name: string; picUrl?: string; artist?: { name: string } }
+interface AlbumResult { id: number; name: string; picUrl?: string; artist?: { id?: number; name: string }; artists?: { id?: number; name: string }[] }
 interface PlaylistResult { id: number; name: string; coverImgUrl?: string; trackCount?: number; creator?: { nickname: string }; playCount?: number }
 interface UserResult { userId: number; nickname: string; avatarUrl?: string; signature?: string; followeds?: number }
-interface MvResult { id: number; name: string; cover?: string; imgurl?: string; imgurl16v9?: string; artistName?: string; playCount?: number; duration?: number }
+interface MvResult { id: number; name: string; cover?: string; imgurl?: string; imgurl16v9?: string; artistName?: string; artistId?: number; artists?: { id?: number; name: string }[]; playCount?: number; duration?: number }
 interface DjResult { id: number; name: string; picUrl?: string; desc?: string; programCount?: number; subCount?: number; dj?: { nickname?: string } }
 interface VideoResult { vid: string; title: string; coverUrl?: string; creator?: { nickname?: string; userName?: string }[]; playTime?: number; durationms?: number }
 
@@ -488,7 +489,7 @@ export default function SearchPage() {
                   </div>
                 </div>
                 <p className="mt-2.5 text-sm font-medium truncate leading-snug px-0.5">{a.name}</p>
-                <p className="text-xs text-gray-500 truncate px-0.5">{a.artist?.name}</p>
+                <p className="text-xs text-gray-500 truncate px-0.5"><ArtistLinks artists={a.artists?.length ? a.artists : a.artist ? [a.artist] : []} /></p>
               </div>
             ))}
           </div>
@@ -588,7 +589,7 @@ export default function SearchPage() {
                 </div>
                 <div className="p-3">
                   <p className="text-sm font-semibold truncate">{mv.name}</p>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">{mv.artistName || 'MV'}</p>
+                  <p className="text-xs text-gray-500 truncate mt-0.5"><ArtistLinks artists={mv.artists?.length ? mv.artists : mv.artistName ? [{ id: mv.artistId, name: mv.artistName }] : []} fallback="MV" /></p>
                 </div>
               </div>
             ))}

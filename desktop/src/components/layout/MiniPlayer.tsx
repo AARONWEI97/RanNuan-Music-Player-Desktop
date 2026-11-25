@@ -3,7 +3,9 @@ import { usePlayerStore, usePlaylistStore } from '@shared'
 import type { SongResult } from '@shared'
 import { Play, Pause, SkipBack, SkipForward, Maximize2, Heart, Volume2, VolumeX, ListMusic, X } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume } from '@/services/audioService'
-import { isFavorite, toggleFavorite } from '@/store/favoritesStore'
+import { toggleFavorite } from '@/store/favoritesStore'
+import { useIsFavorite } from '@/hooks/useFavorites'
+import { SongMetadata } from '@/components/common/MusicLinks'
 import { thumbUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
 
@@ -21,11 +23,9 @@ export default function MiniPlayer({ onRestore, onPlaylistToggle }: { onRestore:
   const [showPlaylist, setShowPlaylist] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
   const [hoverProgress, setHoverProgress] = useState<number | null>(null)
-  const [favVersion, setFavVersion] = useState(0)
   const progressRef = useRef<HTMLDivElement>(null)
 
-  // 收藏状态 — favVersion 变化时重新计算
-  const fav = favVersion >= 0 && playMusic?.id ? isFavorite(playMusic.id) : false
+  const fav = useIsFavorite(playMusic?.id)
 
   // 播放控制
   const handlePrev = () => {
@@ -44,7 +44,6 @@ export default function MiniPlayer({ onRestore, onPlaylistToggle }: { onRestore:
   const handleToggleFav = () => {
     if (!playMusic) return
     const added = toggleFavorite(playMusic)
-    setFavVersion((v) => v + 1)
     showToast(added ? '已收藏' : '已取消收藏', playMusic.name)
   }
 
@@ -121,7 +120,7 @@ export default function MiniPlayer({ onRestore, onPlaylistToggle }: { onRestore:
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onRestore} data-tauri-drag-region>
           <div className="text-xs font-medium truncate leading-tight">{playMusic?.name || '未播放'}</div>
           <div className="text-[10px] text-gray-500 truncate leading-tight mt-0.5">
-            {playMusic?.ar?.map((a) => a.name).join(' / ') || ''}
+            <SongMetadata song={playMusic} onNavigate={onRestore} />
           </div>
         </div>
 
@@ -254,7 +253,7 @@ export default function MiniPlayer({ onRestore, onPlaylistToggle }: { onRestore:
                   {song.name}
                 </div>
                 <div className="text-[8px] text-gray-400 truncate">
-                  {song.ar?.map((a) => a.name).join(' / ')}
+                  <SongMetadata song={song} onNavigate={onRestore} />
                 </div>
               </div>
               <button

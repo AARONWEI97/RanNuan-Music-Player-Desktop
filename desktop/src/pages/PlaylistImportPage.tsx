@@ -1,3 +1,4 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { importPlaylist, getImportTaskStatus } from '@shared'
@@ -37,6 +38,7 @@ const modeConfig: Record<ImportMode, { label: string; icon: typeof Link; placeho
 
 export default function PlaylistImportPage() {
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const isLoggedIn = useAuthStore(s => s.isLoggedIn)
 
   const [mode, setMode] = useState<ImportMode>('link')
@@ -191,7 +193,7 @@ export default function PlaylistImportPage() {
     <div>
       {/* header */}
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+        <button aria-label="返回" onClick={goBack} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-gray-400" />
         </button>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">歌单导入</h1>

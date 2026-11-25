@@ -1,20 +1,22 @@
 import { useState, useCallback } from 'react'
 import { Minus, Square, X, Maximize2, Bone, PawPrint, Heart } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { isTauri } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@shared'
 import pkg from '../../../package.json'
 
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false)
-  const appWindow = getCurrentWindow()
+  const appWindow = isTauri() ? getCurrentWindow() : null
   const theme = useSettingsStore((s) => s.theme)
   const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
 
   const handleMinimize = useCallback(() => {
-    appWindow.minimize()
+    appWindow?.minimize()
   }, [appWindow])
 
   const handleToggleMaximize = useCallback(async () => {
+    if (!appWindow) return
     const maximized = await appWindow.isMaximized()
     if (maximized) {
       await appWindow.unmaximize()
@@ -27,7 +29,7 @@ export default function TitleBar() {
 
   // ★ 关闭 → 最小化到托盘（类似 QQ音乐/网易云行为）
   const handleClose = useCallback(() => {
-    appWindow.hide()
+    appWindow?.hide()
   }, [appWindow])
 
   return (
@@ -81,7 +83,7 @@ export default function TitleBar() {
       )}
 
       {/* ── Right: window controls ── */}
-      <div className="dog-win-controls flex items-center h-full ml-auto relative z-[1]" data-tauri-drag-region="false">
+      {appWindow && <div className="dog-win-controls flex items-center h-full ml-auto relative z-[1]" data-tauri-drag-region="false">
         <button
           onClick={handleMinimize}
           className="dog-win-btn h-full w-11 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/[0.06] transition-colors"
@@ -104,7 +106,7 @@ export default function TitleBar() {
         >
           <X className="w-3.5 h-3.5" />
         </button>
-      </div>
+      </div>}
     </div>
   )
 }

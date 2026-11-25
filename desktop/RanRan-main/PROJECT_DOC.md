@@ -70,7 +70,7 @@ src/
 │   │   ├── InfoPanel.tsx         # 行星信息面板
 │   │   ├── UniverseIntro.tsx     # 宇宙开场动画（嵌入态保留）
 │   │   └── VideoManager.tsx      # 片库
-│   ├── layout/     # 页面布局组件 (Navbar, Sidebar)
+│   ├── layout/     # 页面布局组件 (Navbar, Sidebar, AlbumDetail)
 │   ├── music/      # 音乐播放器组件 (MusicPlayer, MusicRecommendationPanel)
 │   ├── photos/     # 照片相关组件 (PhotoGrid, HolographicViewer, UploadModal, TimelineView, TimeTravel)
 │   ├── settings/   # 设置相关组件 (SettingsModal, TagsModal, GradientSelector)
@@ -93,9 +93,9 @@ src/
 │   ├── videoElementManager.ts # 【遗留】旧双解码方案，影院已不用，勿接回
 │   ├── dataExport.ts          # 数据导出/导入（照片+Blob+相册+标签+设置，导入写回 store）
 │   ├── lrcParser.ts           # LRC歌词解析器
-│   └── imageWorker.ts         # 图片压缩Worker管理（Worker线程压缩+主线程回退）
+│   └── imageWorker.ts         # 图片压缩：3 线程池，一图解码一次；失败回退主线程
 ├── workers/        # Web Workers
-│   └── imageCompressor.worker.ts  # 图片压缩Worker（压缩+缩略图生成）
+│   └── imageCompressor.worker.ts  # 单次解码后同时出压缩图和缩略图
 ├── store/          # Zustand 状态管理
 │   ├── modules/    # 状态分片 (photoStore.ts, uiStore.ts)
 │   ├── useStore.ts # 聚合的 Store Hook
@@ -107,7 +107,7 @@ src/
 ```
 
 ## 5. 核心逻辑流转
-1. **数据初始化**：`App.tsx` 挂载时清掉 localStorage 里的旧键 `ranran-photo-storage`，再 `loadLibrary()`。照片和视频都在 `RanRanDB`（v4 起照片在 `libraryPhotos`）。默认相册要等照片库读完再创建。
+1. **数据初始化**：`App.tsx` 挂载时清掉 localStorage 里的旧键 `ranran-photo-storage`，再 `loadLibrary()`。照片和视频都在 `RanRanDB`（v4 起照片在 `libraryPhotos`）。默认相册要等照片库读完再创建。大批量导入走 `addPhotos`：满 24 张一次 `putLibraryPhotos`，全部写完才更新内存。删除多张合成一次 `deleteLibraryPhotos`。
 2. **状态管理**：通过 `Zustand` 集中管理选中的照片、UI 弹窗开关、当前播放的音乐以及用户的主题配置。
 3. **3D 渲染层**：`UniverseView` 接收照片列表，用 `kepler.ts` 映射为 `PhotoPlanet`（照片自发光贴满球体）。嵌入桌面端时恒星/轨道/歌词跟随父页播放快照。
 4. **交互响应**：点击行星呼出 `HolographicViewer`；点击全息屏进入独立 HTML5 影院（同时卸载 Canvas，避免 WebView2 双解码卡死）。
@@ -219,10 +219,10 @@ src/
 | 任务 | 编号 | 状态 | 实际效果 |
 |------|------|------|----------|
 | InstancedMesh 实例化渲染 | P3-1 | ✅ | AsteroidBelt 改用 InstancedMesh，80个小行星从80个独立Mesh→1个InstancedMesh，Draw Call大幅减少 |
-| Web Worker 缩略图压缩 | P3-2 | ✅ | 新增 `workers/imageCompressor.worker.ts` + `services/imageWorker.ts`，照片上传压缩在Worker线程执行，主线程不卡顿，失败自动回退主线程 |
+| Web Worker 缩略图压缩 | P3-2 | ✅ | `imageCompressor.worker.ts` 一次解码同时出压缩图和缩略图。`imageWorker.ts` 用 3 个线程；失败的那一张回退主线程 |
 | 纹理懒加载与 LOD | P3-3 | ✅ | PhotoPlanet 新增三级LOD（high/medium/low），根据摄像机距离动态切换：近处加载高清纹理+32段几何体，远处用缩略图+12段几何体，选中/悬停强制高清 |
 | 虚拟化照片列表 | P3-4 | ✅ | 新增 `DistantPlanetParticles.tsx`，照片超过30张时启用虚拟化，仅渲染视口内行星，远处用彩色粒子点替代，Scene.tsx 中 useFrame 动态计算可见性 |
-| IndexedDB 批量操作优化 | P3-5 | ✅ | database.ts 全面改用事务（transaction），新增 batchDeleteFiles/batchPutFiles/batchDeleteMusic/batchPutMusic/batchUpdateMusicOrder 等批量方法，清理操作也使用事务 |
+| IndexedDB 批量操作优化 | P3-5 | ✅ | 文件和音乐早先就有批量事务。2026-10-12 照片库补上 `putLibraryPhotos` / `deleteLibraryPhotos` / `patchLibraryPhotos`，导入和删除不再一张一个事务 |
 | 内存泄漏排查 | P3-6 | ✅ | 修复5处泄漏：PhotoPlanet纹理dispose、Sun的3个ShaderMaterial dispose、PlanetRing的CanvasTexture dispose、ConstellationTextureLoader纹理dispose、AsteroidBelt几何体clone改为InstancedMesh |
 
 ### Phase 4：🎨 UI/UX 精细化 ✅ 已完成
@@ -278,7 +278,8 @@ src/
 | 情绪化音乐推荐 | P6-10 | ⭐⭐⭐ | 音乐使用率提升 50%+ | ✅ | 新增 `services/musicRecommendation.ts`（15+ 标签映射/时间段分析/季节分析），`components/music/MusicRecommendationPanel.tsx` 推荐面板，App.tsx 右侧垂直排列浮动按钮（🎵音乐/📅时间轴/⚡侧边栏） |
 | 时光穿梭交互 | P6-13 | ⭐⭐⭐ | 回忆沉浸感提升 45%+ | ✅ | 新增 `components/photos/TimeTravel.tsx`，按年份分组照片，全屏年份视图 + 动画网格，ESC 快捷键关闭 |
 | 照片上传进度条 | P6-16 | ⭐⭐ | 用户体验提升 | ✅ | UploadModal 新增渐变动画进度条 + 百分比显示 + 当前文件索引提示，photoStore.addPhoto 支持 onProgress 回调 |
-| 照片持久化修复 | P6-17 | ⭐⭐ | 数据完整性 | ✅ | 2026-10-11：目录不再走 Zustand persist。压缩 Blob 与元数据一起写入 `RanRanDB` v4 的 `libraryPhotos`，`put` 完成才算上传成功。旧 localforage 只在 `legacyMigrated` 未置位时搬一次。详见 `desktop/DESKTOP_DEV.md` 三十六 |
+| 照片持久化修复 | P6-17 | ⭐⭐ | 数据完整性 | ✅ | 2026-10-11：目录不再走 Zustand persist。压缩 Blob 与元数据一起写入 `RanRanDB` v4 的 `libraryPhotos`，`put` 完成才算上传成功。旧 localforage 只在 `legacyMigrated` 未置位时搬一次。2026-10-12 大批量改为分批事务，见三十七。详见 `desktop/DESKTOP_DEV.md` 三十六、三十七 |
+| 相册列表下探 | P6-19 | ⭐⭐ | 相册里能直接看照片 | ✅ | 2026-10-12：点相册进入 `AlbumDetail` 虚拟列表，可搜索、勾选后一次删除，点照片打开全息查看器。单次导入上限 500 张 |
 | 智能相册分类 | P6-6 | ⭐⭐⭐⭐ | 节省整理时间 70%+ | ⏳ 待实现 |
 | 3D 照片回忆录 | P6-7 | ⭐⭐⭐⭐⭐ | 独特情感表达载体 | ⏳ 待实现 |
 | 实时协作相册 | P6-8 | ⭐⭐⭐⭐ | 社交分享场景覆盖 | ⏳ 待实现 |

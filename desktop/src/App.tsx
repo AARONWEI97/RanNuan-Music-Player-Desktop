@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { BrowserRouter } from 'react-router-dom'
+import AppRouter from './components/layout/AppRouter'
 import { useSettingsStore, setApiBaseUrl } from '@shared'
 import { useAuthStore } from '@/store/authStore'
 import Layout from './components/layout/Layout'
@@ -68,7 +68,7 @@ function App() {
   }, [theme])
 
   return (
-    <BrowserRouter>
+    <AppRouter>
       {/* Splash 覆盖层 — 后台正常初始化 stores / restore / API */}
       {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
 
@@ -76,7 +76,7 @@ function App() {
       <Layout>
         <KeepAliveRoutes />
       </Layout>
-    </BrowserRouter>
+    </AppRouter>
   )
 }
 

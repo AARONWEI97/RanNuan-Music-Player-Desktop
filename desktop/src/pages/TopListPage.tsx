@@ -17,19 +17,25 @@ export default function TopListPage() {
   const navigate = useNavigate()
   const [lists, setLists] = useState<ToplistItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    let cancelled = false
     getToplist().then((res) => {
-      setLists(res?.data?.list || [])
-    }).finally(() => setLoading(false))
-  }, [])
+      if (!cancelled) setLists(res?.data?.list || [])
+    }).catch(() => {
+      if (!cancelled) setFailed(true)
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [attempt])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin w-8 h-8 border-2 border-[#e60026] border-t-transparent rounded-full" />
-      </div>
-    )
+  const retry = () => {
+    setFailed(false)
+    setLoading(true)
+    setAttempt(previous => previous + 1)
   }
 
   return (
@@ -38,6 +44,19 @@ export default function TopListPage() {
         <Trophy className="w-6 h-6 text-[#e60026]" />
         <h1 className="text-2xl font-bold">排行榜</h1>
       </div>
+
+      {loading && (
+        <div role="status" aria-label="正在加载榜单" className="flex items-center justify-center gap-3 h-64 text-sm text-gray-500 dark:text-gray-400">
+          <div aria-hidden="true" className="animate-spin w-6 h-6 border-2 border-[#e60026] border-t-transparent rounded-full" />
+          正在加载榜单…
+        </div>
+      )}
+      {failed && (
+        <div className="flex items-center justify-center gap-3 h-64 text-sm text-gray-500 dark:text-gray-400">
+          榜单加载失败
+          <button type="button" className="text-[#e60026] hover:underline" onClick={retry}>重试</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {lists.map((item) => (

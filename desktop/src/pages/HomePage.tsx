@@ -1,3 +1,4 @@
+import { ArtistLinks } from '@/components/common/MusicLinks'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -757,7 +758,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="mt-2.5 text-sm font-medium truncate leading-snug">{album.name}</p>
-                <p className="text-xs text-gray-500 truncate">{album.artistName}</p>
+                <p className="text-xs text-gray-500 truncate"><ArtistLinks artists={[{ id: album.artistId, name: album.artistName }]} /></p>
               </div>
             ))}
           </div>

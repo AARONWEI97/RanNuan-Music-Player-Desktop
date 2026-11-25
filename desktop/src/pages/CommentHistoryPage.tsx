@@ -1,3 +1,6 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { ArtistLinks } from '@/components/common/MusicLinks'
+import type { MusicEntity } from '@/utils/songMetadata'
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUserCommentHistory, getMusicDetail, sendComment, likeComment } from '@shared'
@@ -23,6 +26,7 @@ interface CommentItem {
   resourceType: ResourceType
   resourceId: number
   resourceName: string
+  resourceArtists?: MusicEntity[]
   resourceArtist?: string
   resourcePic?: string
   resourceSub?: string
@@ -81,6 +85,7 @@ function normalizeComment(c: any): CommentItem {
     likedCount: c.likedCount || 0, liked: c.liked || false,
     beReplied: c.beReplied, threadId: c.threadId,
     resourceType: 'song', resourceId: song.id, resourceName: song.name,
+    resourceArtists: song.ar,
     resourceArtist: song.ar?.map((a: any) => a.name).join('/') || '',
     resourcePic: song.al?.picUrl || '', resourceSub: '',
     rawSong: song,
@@ -97,6 +102,7 @@ function normalizeComment(c: any): CommentItem {
     likedCount: c.likedCount || 0, liked: c.liked || false,
     beReplied: c.beReplied, threadId: c.threadId,
     resourceType: 'album', resourceId: album.id, resourceName: album.name,
+    resourceArtists: album.artists?.length ? album.artists : album.artist ? [album.artist] : [],
     resourceArtist: album.artist?.name || album.artists?.[0]?.name,
     resourcePic: album.picUrl || '', resourceSub: `${album.size || 0} 首`,
   }
@@ -163,7 +169,7 @@ function CommentCard({ item, index, onPlay, onLike, onDelete, onNavigate }: {
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{item.resourceName}</p>
             </div>
             {(item.resourceArtist || item.resourceSub) && (
-              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">{item.resourceArtist}{item.resourceSub ? ` · ${item.resourceSub}` : ''}</p>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 truncate"><ArtistLinks artists={item.resourceArtists?.length ? item.resourceArtists : item.resourceArtist ? item.resourceArtist.split('/').map(name => ({ name })) : []} fallback="" />{item.resourceSub ? ` · ${item.resourceSub}` : ''}</p>
             )}
           </div>
           {item.resourceType === 'song' && item.rawSong && item.resourceId > 0 && (
@@ -229,6 +235,7 @@ function CommentCard({ item, index, onPlay, onLike, onDelete, onNavigate }: {
 /* ═══════════════ MAIN ═══════════════ */
 export default function CommentHistoryPage() {
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const profile = useAuthStore(s => s.profile)
   const isLoggedIn = useAuthStore(s => s.isLoggedIn)
 
@@ -278,7 +285,7 @@ export default function CommentHistoryPage() {
           setComments(prev => prev.map(c => {
             if (c.resourceType === 'song' && c.resourceId > 0 && map.has(c.resourceId)) {
               const s = map.get(c.resourceId)
-              return { ...c, resourceName: s.name, resourceArtist: s.ar?.map((a: any) => a.name).join('/'), resourcePic: s.al?.picUrl || '', rawSong: { id: s.id, name: s.name, ar: s.ar, al: s.al } }
+              return { ...c, resourceName: s.name, resourceArtists: s.ar, resourceArtist: s.ar?.map((a: any) => a.name).join('/'), resourcePic: s.al?.picUrl || '', rawSong: { id: s.id, name: s.name, ar: s.ar, al: s.al } }
             }
             return c
           }))
@@ -349,7 +356,7 @@ export default function CommentHistoryPage() {
     <div>
       {/* header */}
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+        <button aria-label="返回" onClick={goBack} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-gray-400" />
         </button>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">评论历史</h1>

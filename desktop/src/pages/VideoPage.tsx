@@ -1,3 +1,4 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getRelatedAllVideo, getVideoDetail, getVideoDetailInfo, getVideoUrl } from '@shared'
@@ -54,6 +55,7 @@ function getCreatorAvatar(detail: any) {
 export default function VideoPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const videoId = id || ''
 
   const [detail, setDetail] = useState<any>(null)
@@ -154,7 +156,7 @@ export default function VideoPage() {
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <Video className="w-14 h-14 mb-3 opacity-25" />
         <p className="text-sm">{error || '视频不存在'}</p>
-        <button onClick={() => navigate(-1)} className="mt-4 px-4 py-2 rounded-full bg-[#e60026] text-white text-sm">返回</button>
+        <button onClick={goBack} className="mt-4 px-4 py-2 rounded-full bg-[#e60026] text-white text-sm">返回</button>
       </div>
     )
   }
@@ -180,7 +182,7 @@ export default function VideoPage() {
         )}
 
         <div className="relative z-10 max-w-5xl mx-auto px-6 pt-4 pb-10">
-          <button onClick={() => navigate(-1)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#e60026] dark:text-gray-400 dark:hover:text-white">
+          <button onClick={goBack} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#e60026] dark:text-gray-400 dark:hover:text-white">
             <ArrowLeft className="w-4 h-4" /> 返回
           </button>
 

@@ -1,10 +1,13 @@
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { usePlayerStore, usePlaylistStore, useSettingsStore } from '@shared'
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Repeat, Shuffle, ListMusic, Mic2, PanelBottom, Gauge, Heart, Loader2, PawPrint } from 'lucide-react'
 import { togglePlay, playSong, seekTo, setVolume, setPlaybackRate } from '@/services/audioService'
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
-import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
+import { toggleFavorite } from '@/store/favoritesStore'
+import { useIsFavorite } from '@/hooks/useFavorites'
+import { SongMetadata } from '@/components/common/MusicLinks'
 import { thumbUrl } from '@/utils/image'
 import { showToast } from '@/utils/toast'
 import SourceSelector from '@/components/player/SourceSelector'
@@ -24,6 +27,7 @@ interface PlayerBarProps {
 export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarProps) {
   const navigate = useNavigate()
   const location = useLocation()
+  const goBack = useBackNavigation()
   const theme = useSettingsStore((s) => s.theme)
   const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
   const { playMusic, isPlay, currentProgress, duration, volume, isMuted, isLoading, playbackRate } = usePlayerStore()
@@ -34,16 +38,11 @@ export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarP
   // ── hover states ──
   const [hoverProgress, setHoverProgress] = useState<number | null>(null)
   const [favPop, setFavPop] = useState(false)
-  const [favoriteVersion, setFavoriteVersion] = useState(0)
-
-  // 收藏存储是 localStorage + 普通模块缓存，不会主动触发 React 重渲染。
-  // 用本地版本号让点击收藏后立即重新读取状态。
-  const fav = favoriteVersion >= 0 && playMusic?.id ? isFavorite(playMusic.id) : false
+  const fav = useIsFavorite(playMusic?.id)
 
   const handleToggleFavorite = useCallback(() => {
     if (!playMusic) return
     const added = toggleFavorite(playMusic)
-    setFavoriteVersion((v) => v + 1)
     if (added) {
       setFavPop(true)
       setTimeout(() => setFavPop(false), 400)
@@ -163,11 +162,7 @@ export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarP
             if (!playMusic?.id) return
             // 已在歌曲详情页时，点击封面关闭详情页；切歌后路由 id 可能还没同步，不能只按当前歌曲 id 判断。
             if (/^\/song\/\d+/.test(location.pathname)) {
-              if (location.key === 'default' || window.history.length <= 2) {
-                navigate('/', { replace: true })
-              } else {
-                navigate(-1)
-              }
+              goBack()
             } else {
               navigate(`/song/${playMusic.id}`)
             }
@@ -196,7 +191,7 @@ export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarP
               {playMusic?.name || '未播放'}
             </p>
             <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
-              {playMusic?.ar?.map(a => a.name).join(' / ') || '—'}
+              <SongMetadata song={playMusic} />
             </p>
           </div>
         </div>
@@ -256,7 +251,7 @@ export default function PlayerBar({ onMiniMode, miniDocked = false }: PlayerBarP
             <SkipForward className="w-[18px] h-[18px]" />
           </button>
 
-          <button onClick={() => setShowPlaylistDrawer(true)} title="播放队列"
+          <button onClick={() => setShowPlaylistDrawer(true)} title="播放队列" aria-label="播放队列"
             className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.04] relative">
             <ListMusic className="w-[17px] h-[17px]" />
             {playList.length > 0 && (

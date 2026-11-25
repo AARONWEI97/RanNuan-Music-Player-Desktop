@@ -1,5 +1,5 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { getDayRecommend, getHistoryRecommendDates, getHistoryRecommendSongs, type SongResult, usePlaylistStore } from '@shared'
 import { playSong } from '@/services/audioService'
 import SongRow from '@/components/common/SongRow'
@@ -21,7 +21,7 @@ function mapSong(song: any): SongResult {
 }
 
 export default function DailyRecommendPage() {
-  const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const { setPlayList, setPlayListIndex } = usePlaylistStore()
   const [songs, setSongs] = useState<SongResult[]>([])
 
@@ -134,7 +134,7 @@ export default function DailyRecommendPage() {
     <div className="space-y-6">
       {/* Back */}
       <button
-        onClick={() => navigate(-1)}
+        onClick={goBack}
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors"
       >
         <ChevronLeft className="w-4 h-4" />

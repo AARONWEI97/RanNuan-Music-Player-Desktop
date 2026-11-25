@@ -1,11 +1,10 @@
-import { useState } from 'react'
 import { Heart } from 'lucide-react'
-import { getFavorites } from '@/store/favoritesStore'
+import { useFavorites } from '@/hooks/useFavorites'
 import { playSong } from '@/services/audioService'
 import SongRow from '@/components/common/SongRow'
 
 export default function FavoritesPage() {
-  const [favorites] = useState(() => getFavorites())
+  const favorites = useFavorites()
 
   return (
     <div>

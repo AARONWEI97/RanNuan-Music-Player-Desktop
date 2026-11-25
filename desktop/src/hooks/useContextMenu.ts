@@ -3,13 +3,13 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react'
 export interface MenuItem {
   label: string
   icon?: ReactNode
-  onClick: () => void
+  onClick: () => void | Promise<unknown>
   divider?: boolean
   danger?: boolean
   disabled?: boolean
 }
 
-interface ContextMenuState {
+export interface ContextMenuState {
   x: number
   y: number
   items: MenuItem[]
@@ -37,7 +37,7 @@ export function showContextMenu(
   if (closeCallbacks.length > 0) {
     const old = closeCallbacks
     closeCallbacks = []
-    old.forEach((cb) => setTimeout(cb, 0))
+    old.forEach((cb) => cb())
   }
   closeCallbacks = opts?.onClose ? [opts.onClose] : []
   currentMenu = { x, y, items, visible: true }
@@ -51,7 +51,7 @@ export function hideContextMenu() {
     // ─── 触发关闭回调 ───
     const cbs = closeCallbacks
     closeCallbacks = []
-    cbs.forEach((cb) => setTimeout(cb, 0))
+    cbs.forEach((cb) => cb())
   }
 }
 
@@ -78,17 +78,36 @@ export function useContextMenu() {
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
+      const target = e.target as Element
       // 如果点击的是菜单本身或菜单项，不关闭
       if (target.closest('[data-context-menu]')) return
       hideMenu()
     }
+    const handleScrollInput = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest('[data-context-menu]')) return
+      hideMenu()
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !currentMenu.visible) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      hideMenu()
+    }
     // ★ 用 mousedown 而不是 click，避免和按钮的 click 冲突
     window.addEventListener('mousedown', handleMouseDown)
-    window.addEventListener('scroll', hideMenu, true)
+    // Layout shifts and focus restoration can scroll without a user gesture.
+    window.addEventListener('wheel', handleScrollInput, { capture: true, passive: true })
+    window.addEventListener('touchmove', handleScrollInput, { capture: true, passive: true })
+    window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('resize', hideMenu)
+    window.addEventListener('blur', hideMenu)
     return () => {
       window.removeEventListener('mousedown', handleMouseDown)
-      window.removeEventListener('scroll', hideMenu, true)
+      window.removeEventListener('wheel', handleScrollInput, true)
+      window.removeEventListener('touchmove', handleScrollInput, true)
+      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('resize', hideMenu)
+      window.removeEventListener('blur', hideMenu)
     }
   }, [hideMenu])
 

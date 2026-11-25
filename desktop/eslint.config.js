@@ -8,6 +8,8 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   globalIgnores([
     'dist',
+    'test-results/**',
+    'playwright-report/**',
     'public/ranran/**',
     'RanRan-main/**',
     'src-tauri/target/**',

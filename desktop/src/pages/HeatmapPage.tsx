@@ -1,5 +1,5 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { getListenReport, getListenTodaySongs, getListenYearReport } from '@shared'
 import { usePlayEventStore } from '@/store/historyStore'
 import { useAuthStore } from '@/store/authStore'
@@ -80,7 +80,7 @@ function extractCollectionCount(value: unknown, depth = 0): number {
 }
 
 export default function HeatmapPage() {
-  const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const playEvents = usePlayEventStore(s => s.events)
   const isLoggedIn = useAuthStore(s => s.isLoggedIn)
 
@@ -214,7 +214,7 @@ export default function HeatmapPage() {
       {/* header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+          <button aria-label="返回" onClick={goBack} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
           <h1 className="text-2xl font-bold">听歌热力图</h1>

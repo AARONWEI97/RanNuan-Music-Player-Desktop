@@ -277,6 +277,7 @@ desktop/
 - [x] 照片行星自发光铺满 + Kepler 共面公转
 - [x] 独立影院自动播放循环（进影院卸载 Canvas）
 - [x] 照片与影院视频同一套 IndexedDB 提交（`RanRanDB` v4 `libraryPhotos`，退出重进仍在；见三十六）
+- [x] 相册列表可下探到照片，大批量导入和删除按批提交（见三十七）
 - [x] 宇宙设置模块接到真实行为（主题/轨道/旋转/粒子/过渡/导入导出/歌词流星/开场/性能）
 - [ ] 星空页全息屏与 WebGL 同屏循环播放（WebView2 解码冲突，禁止用进程级浏览器参数去换）
 
@@ -633,8 +634,10 @@ interface SongRowProps {
 
 | 层级 | 组件 | 说明 |
 |------|------|------|
-| **页面级** | `CachedSlot`（`KeepAlive.tsx`） | 14 个缓存页面首次访问后永不销毁，切走 `display:none`，回来 `display:block`。二次进入 0ms 显示 |
-| **Tab 级** | `TabCache`（`KeepAlive.tsx`） | LibraryPage 6 个 tab、ArtistPage 4 个 tab、UserPage 4 个 tab。切 tab 不销毁子组件，分页/滚动位置/已加载数据全保留 |
+| **页面级** | `CachedSlot`（`KeepAlive.tsx`） | 固定入口首次访问后保留挂载；宇宙相册离开时卸载 iframe |
+| **详情页** | `KeepAliveRoutes` | 保留最近 5 条歌手、专辑、歌单或用户详情的历史记录及其分页状态；音视频详情和独立评论页切走即卸载 |
+| **Tab 级** | `TabCache`（`KeepAlive.tsx`） | 切换标签时保留分页和已加载数据；歌手标签记录在 URL 中 |
+| **主区滚动** | `usePageScroll` | 新打开的历史记录从顶部开始，后退/前进按历史记录恢复，同页替换保留当前偏移；内容尚未加载时等待它达到可恢复的高度 |
 
 **关键改动**：
 - `App.tsx`：`<AppRoutes />` → `<KeepAliveRoutes />`
@@ -3013,4 +3016,63 @@ cd desktop && grep -o "手写会重复定义" public/ranran/assets/index-*.js | 
 | 上传后退出程序再进 | **没在桌面窗口里点过**。类型检查和构建不能代替这一次重启 |
 
 实机要看的就是：导入一张图，完全退出进程再开，行星还在；原来的视频还在；若旧 blob 还留着，第一次进入应出现恢复出来的照片。
+
+本节产物 `?build=20261011b` / `index-BbNydADv.js` 已在 2026-10-12 被三十七替换。桌面端现在加载的是 `?build=20261012b`。
+
+---
+
+## 三十七、相册列表下探 & 批量写入删除（2026-10-12）
+
+> 相册侧栏原先只有名称和张数。导入几百张时，每张照片单独 `put`，并且每张都重写一遍 `libraryMeta`，删除也是一张一次事务。星图还会在每张写入后重绘。
+
+### 37.1 相册列表
+
+`Sidebar.tsx` 仍从顶栏文件夹图标打开。点一张相册卡片，或点「全部照片」，侧栏换成 `AlbumDetail.tsx` 里的照片列表，同时 `setCurrentAlbum`：星图只显示这个范围，接下来打开导入时保存位置也跟着这个相册。
+
+| 能力 | 行为 |
+|------|------|
+| 相册卡片 | 封面（`coverPhotoId`，否则最新一张）、实时张数、日期、说明。点缩略图把那张设为封面 |
+| 编辑 | 改名称和说明，写入 `libraryMeta` |
+| 搜索 / 排序 | 按名称或说明过滤；最近、照片最多、名称。默认相册固定在最前，可以改名，不能删 |
+| 删除相册 | 先确认。有别的相册时，照片可以一次挪过去再删相册；也可以连照片一起删 |
+| 照片列表 | 虚拟滚动。可搜索、全选。勾选后一次删除。点一张打开原来的全息查看器 |
+| 返回 | 左上角「相册」回到列表。当前相册筛选保持不变 |
+
+导入上限从 20 张改为 500 张。预览只生成前 12 张的 object URL，并在列表变化时 `revoke`。
+
+### 37.2 写入和删除
+
+库版本仍是 `RanRanDB` v4，没有新表。
+
+| 操作 | 现在 |
+|------|------|
+| 导入 | `addPhotos`。3 个压缩线程，每张图只解码一次，再出压缩图和缩略图。满 24 张调用 `putLibraryPhotos`（内部按 40 条一个事务）。全部写完后才更新一次内存和 `libraryMeta` |
+| 删除多张 | 同一轮事件里的 `removePhoto` / `removePhotos` 合成一次。界面先拿掉，`deleteLibraryPhotos` 按 200 条一个事务删键，然后写一次目录 |
+| 删相册 | `removeAlbum` 用同一次批量删除清掉其中的照片 |
+| 照片挪相册 | `movePhotos` → `patchLibraryPhotos`，40 条一个事务读出再写回，Blob 保留 |
+| 删标签 | 只修补带这个标签的照片，不再把整库重写一遍 |
+
+压缩线程协议改成一条 `prepare` 消息。线程失败时，这一张回退到主线程压缩，不拖垮其余照片。没写进去的留在导入列表里。
+
+中途关掉程序时，已经落盘的那几批仍在 `libraryPhotos`。下次 `loadLibrary()` 会读出来。目录张数以内存里的照片条数为准，不依赖相册对象上可能滞后的 `photoCount`。
+
+### 37.3 产物和验证
+
+| 项 | 值 |
+|----|----|
+| iframe 缓存 | `?build=20261012b` |
+| 脚本 | `desktop/public/ranran/assets/index-COvoN8an.js` |
+| 样式 | `index-CteRoQlk.css` |
+| 压缩线程 | `imageCompressor.worker-BmH-xU-f.js` |
+
+当天先打过只含相册列表界面的 `20261012a`（`index-BxMKzbUm.js`）。批量写入合进去之后以 `20261012b` 为准，`public/ranran` 里不要再留上一份脚本。
+
+| 项目 | 结果 |
+|------|------|
+| `npx tsc --noEmit -p tsconfig.app.json`（在 `desktop/RanRan-main`） | 通过 |
+| `npm run build`，并拷到 `desktop/public/ranran` | 通过 |
+| 桌面窗口里导入几百张、批量删除、点进相册列表 | **没点过** |
+| `npm run tauri build` | 没跑。已安装的正式包要重新打包才带上这版界面 |
+
+开发模式里重新进入宇宙相册即可。Service Worker 的注销方式仍按三十六：先注销作用域含 `/ranran/` 的注册，再挂 iframe。
 

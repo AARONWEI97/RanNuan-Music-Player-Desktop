@@ -1,23 +1,26 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { usePlaylistStore } from '@shared'
-import { X, Play, Music, Trash2, ListPlus, Heart, MoreHorizontal, User, DiscAlbum, Info, MessageCircle } from 'lucide-react'
+import { usePlaylistStore, type SongResult } from '@shared'
+import { X, Play, Music, Trash2, Heart, MoreHorizontal } from 'lucide-react'
 import { playSong } from '@/services/audioService'
 import { thumbUrl } from '@/utils/image'
 import { isFavorite, toggleFavorite } from '@/store/favoritesStore'
+import { useFavorites } from '@/hooks/useFavorites'
+import { useSongMenu } from '@/hooks/useSongMenu'
+import { hideContextMenu } from '@/hooks/useContextMenu'
+import { SongMetadata } from '@/components/common/MusicLinks'
 import { showToast } from '@/utils/toast'
 
 export default function PlaylistDrawer() {
-  const navigate = useNavigate()
   const {
     playList, playListIndex, playNextQueue,
     showPlaylistDrawer, setShowPlaylistDrawer,
-    removeFromPlayList, setPlayListIndex, addToNextPlay,
+    removeFromPlayList, setPlayListIndex,
     clearPlayAll,
   } = usePlaylistStore()
 
   const listRef = useRef<HTMLDivElement>(null)
-  const [favoriteVersion, setFavoriteVersion] = useState(0)
+  useFavorites()
+  const openSongMenu = useSongMenu()
   const [activeMenuKey, setActiveMenuKey] = useState<string | null>(null)
 
   // ★ 合并列表：playNextQueue 的歌插入到当前播放位置之后
@@ -49,18 +52,16 @@ export default function PlaylistDrawer() {
   }, [showPlaylistDrawer])
 
   useEffect(() => {
-    if (!showPlaylistDrawer || !activeMenuKey) return
-    const close = () => setActiveMenuKey(null)
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [showPlaylistDrawer, activeMenuKey])
+    if (!showPlaylistDrawer) hideContextMenu()
+    return () => hideContextMenu()
+  }, [showPlaylistDrawer])
 
   const totalCount = displayList.length
 
-  const getImgUrl = (song: any) =>
+  const getImgUrl = (song: SongResult) =>
     thumbUrl(song.picUrl || song.al?.picUrl || song.album?.picUrl)
 
-  const playQueueItem = useCallback((song: any, vi: number, isNextQueue: boolean, realIdx: number) => {
+  const playQueueItem = useCallback((song: SongResult, vi: number, isNextQueue: boolean, realIdx: number) => {
     setActiveMenuKey(null)
     if (isNextQueue) {
       const qi = vi - playListIndex - 1
@@ -79,7 +80,7 @@ export default function PlaylistDrawer() {
     }
   }, [playList, playListIndex, playNextQueue, setPlayListIndex])
 
-  const removeQueueItem = useCallback((song: any, vi: number, isNextQueue: boolean) => {
+  const removeQueueItem = useCallback((song: SongResult, vi: number, isNextQueue: boolean) => {
     if (isNextQueue) {
       const qi = vi - playListIndex - 1
       usePlaylistStore.setState({ playNextQueue: playNextQueue.filter((_, i) => i !== qi) })
@@ -88,9 +89,8 @@ export default function PlaylistDrawer() {
     }
   }, [playListIndex, playNextQueue, removeFromPlayList])
 
-  const toggleSongFavorite = useCallback((song: any) => {
+  const toggleSongFavorite = useCallback((song: SongResult) => {
     const added = toggleFavorite(song)
-    setFavoriteVersion(v => v + 1)
     showToast(added ? '已收藏' : '已取消收藏', song.name)
   }, [])
 
@@ -103,7 +103,7 @@ export default function PlaylistDrawer() {
         onClick={() => setShowPlaylistDrawer(false)} />
 
       {/* 抽屉 */}
-      <div className="fixed right-0 top-8 bottom-16 w-80 bg-white dark:bg-[#1a1a1a] border-l border-gray-200 dark:border-gray-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+      <div role="dialog" aria-label="播放队列" className="fixed right-0 top-8 bottom-16 w-80 bg-white dark:bg-[#1a1a1a] border-l border-gray-200 dark:border-gray-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-4 h-12 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 bg-white/80 dark:bg-[#1a1a1a]/80 backdrop-blur-sm">
           <div className="flex items-center gap-2">
@@ -119,7 +119,7 @@ export default function PlaylistDrawer() {
                 className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 hover:text-[#e60026] transition-colors"
                 title="清空队列"><Trash2 className="w-4 h-4" /></button>
             )}
-            <button onClick={() => setShowPlaylistDrawer(false)}
+            <button onClick={() => setShowPlaylistDrawer(false)} title="关闭播放队列"
               className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 transition-colors">
               <X className="w-4 h-4" />
             </button>
@@ -135,14 +135,23 @@ export default function PlaylistDrawer() {
               <p className="text-[10px] mt-1 opacity-50">从歌曲列表中添加音乐</p>
             </div>
           ) : (
-            displayList.map((song: any, vi: number) => {
+            displayList.map((song: SongResult, vi: number) => {
               const isCurrent = vi === playListIndex
               const isNextQueue = vi > playListIndex && vi <= playListIndex + playNextQueue.length
               // 在 playList 中的真实索引
               const realIdx = vi <= playListIndex ? vi : vi - playNextQueue.length
               const fav = isFavorite(song.id)
               const menuKey = `${song.id}-${vi}`
-              void favoriteVersion
+              const openMenu = (event: React.MouseEvent) => {
+                openSongMenu(event, song, {
+                  onPlay: () => playQueueItem(song, vi, isNextQueue, realIdx),
+                  onRemoveFromQueue: () => removeQueueItem(song, vi, isNextQueue),
+                  queueRemovalLabel: isNextQueue ? '移出下一首' : '移出队列',
+                  onNavigate: () => setShowPlaylistDrawer(false),
+                  onClose: () => setActiveMenuKey(null),
+                })
+                setActiveMenuKey(menuKey)
+              }
 
               return (
                 <div
@@ -154,11 +163,7 @@ export default function PlaylistDrawer() {
                   onClick={() => {
                     playQueueItem(song, vi, isNextQueue, realIdx)
                   }}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    setActiveMenuKey(menuKey)
-                  }}
+                  onContextMenu={openMenu}
                 >
                   {/* 序号 */}
                   <span className={`w-5 text-center text-[11px] font-medium flex-shrink-0 ${
@@ -185,11 +190,11 @@ export default function PlaylistDrawer() {
                       {song.name}
                     </div>
                     <div className="text-[11px] text-gray-500 truncate">
-                      {song.ar?.map((a: any) => a.name).join(' / ')}
+                      <SongMetadata song={song} onNavigate={() => setShowPlaylistDrawer(false)} />
                     </div>
                   </div>
 
-                  <div className="relative flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className={`relative flex items-center gap-0.5 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${activeMenuKey === menuKey ? 'opacity-100' : 'opacity-0'}`}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -211,11 +216,9 @@ export default function PlaylistDrawer() {
                       <X className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setActiveMenuKey(activeMenuKey === menuKey ? null : menuKey)
-                      }}
+                      onClick={openMenu}
+                      aria-haspopup="menu"
+                      aria-expanded={activeMenuKey === menuKey}
                       className={`p-1.5 rounded transition-colors hover:bg-gray-200 hover:text-[#e60026] dark:hover:bg-white/10 ${
                         activeMenuKey === menuKey ? 'bg-gray-200 text-[#e60026] dark:bg-white/10' : 'text-gray-400'
                       }`}
@@ -223,79 +226,6 @@ export default function PlaylistDrawer() {
                     >
                       <MoreHorizontal className="w-3.5 h-3.5" />
                     </button>
-                    {activeMenuKey === menuKey && (
-                      <div
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-full z-[60] mt-1 w-40 overflow-hidden rounded-lg border border-gray-100 bg-white py-1 shadow-xl shadow-black/10 dark:border-white/[0.08] dark:bg-[#242424]"
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            addToNextPlay(song)
-                            setActiveMenuKey(null)
-                            showToast('已添加到播放队列', '下一首播放')
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 hover:text-[#e60026] dark:text-gray-300 dark:hover:bg-white/[0.06]"
-                        >
-                          <ListPlus className="w-3.5 h-3.5" /> 下一首播放
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setActiveMenuKey(null)
-                            navigate(`/song/${song.id}`)
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 hover:text-[#e60026] dark:text-gray-300 dark:hover:bg-white/[0.06]"
-                        >
-                          <Info className="w-3.5 h-3.5" /> 歌曲详情
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setActiveMenuKey(null)
-                            navigate(`/song/${song.id}/comments`)
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 hover:text-[#e60026] dark:text-gray-300 dark:hover:bg-white/[0.06]"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" /> 查看评论
-                        </button>
-                        {song.ar?.[0]?.id && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveMenuKey(null)
-                              navigate(`/artist/${song.ar[0].id}`)
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 hover:text-[#e60026] dark:text-gray-300 dark:hover:bg-white/[0.06]"
-                          >
-                            <User className="w-3.5 h-3.5" /> 歌手页
-                          </button>
-                        )}
-                        {(song.al?.id || song.album?.id) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveMenuKey(null)
-                              navigate(`/album/${song.al?.id || song.album?.id}`)
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 hover:text-[#e60026] dark:text-gray-300 dark:hover:bg-white/[0.06]"
-                          >
-                            <DiscAlbum className="w-3.5 h-3.5" /> 专辑页
-                          </button>
-                        )}
-                        <div className="my-1 h-px bg-gray-100 dark:bg-white/[0.06]" />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeQueueItem(song, vi, isNextQueue)
-                            setActiveMenuKey(null)
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-500/10"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> {isNextQueue ? '移出下一首' : '移出队列'}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               )

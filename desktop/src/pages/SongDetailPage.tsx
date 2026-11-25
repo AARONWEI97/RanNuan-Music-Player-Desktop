@@ -1,9 +1,13 @@
-import { useEffect, useState, useId } from 'react'
+import { useEffect, useState, useId, useRef } from 'react'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
-import { usePlayerStore, usePlaylistStore, getMusicLrc, getSimiSong, getMusicUrl, getNewComment, getSongWiki, getSongCreators, getSongDynamicCover, getSongChorus, getSongCopyrightRcmd, getSongRedCount, getFirstListenInfo, parseLyric as parseApiLyric } from '@shared'
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { usePlayerStore, usePlaylistStore, getMusicDetail, getMusicLrc, getSimiSong, getMusicUrl, getNewComment, getSongWiki, getSongCreators, getSongDynamicCover, getSongChorus, getSongCopyrightRcmd, getSongRedCount, getFirstListenInfo, parseLyric as parseApiLyric } from '@shared'
 import { Play, Pause, SkipBack, SkipForward, Heart, ArrowLeft, MessageCircle, Music, Disc3, Download, BookOpen } from 'lucide-react'
 import { togglePlay, playSong, seekTo } from '@/services/audioService'
-import { toggleFavorite, isFavorite } from '@/store/favoritesStore'
+import { toggleFavorite } from '@/store/favoritesStore'
+import { useIsFavorite } from '@/hooks/useFavorites'
+import { ArtistLinks, AlbumLink } from '@/components/common/MusicLinks'
+import { getSongAlbum, getSongArtists, hasMusicId } from '@/utils/songMetadata'
 import SongRow from '@/components/common/SongRow'
 import CommentSection from '@/components/common/CommentSection'
 import { coverUrl } from '@/utils/image'
@@ -347,7 +351,30 @@ export default function SongDetailPage() {
   const location = useLocation()
   const { id: routeSongId } = useParams<{ id: string }>()
   const initialTab = new URLSearchParams(location.search).get('tab')
-  const { playMusic, isPlay, currentProgress, duration, isLoading } = usePlayerStore()
+  const player = usePlayerStore()
+  const [requestedSong, setRequestedSong] = useState<SongResult | null>(null)
+  const [detailLoading, setDetailLoading] = useState(true)
+  const isCurrentSong = String(player.playMusic?.id) === routeSongId
+  const playMusic = isCurrentSong ? player.playMusic : (String(requestedSong?.id) === routeSongId ? requestedSong : null)
+  const isPlay = isCurrentSong && player.isPlay
+  const currentProgress = isCurrentSong ? player.currentProgress : 0
+  const duration = isCurrentSong ? player.duration : (playMusic?.dt || playMusic?.duration || 0)
+  const isLoading = isCurrentSong ? player.isLoading : detailLoading
+  const previousPlayingId = useRef(player.playMusic?.id)
+
+  useEffect(() => {
+    if (isCurrentSong || !hasMusicId(routeSongId)) return
+    let cancelled = false
+    setDetailLoading(true)
+    getMusicDetail([Number(routeSongId)]).then(response => {
+      if (cancelled) return
+      const song = response?.data?.songs?.[0]
+      if (song) setRequestedSong(song)
+      else showToast('歌曲不存在')
+    }).catch(() => { if (!cancelled) showToast('歌曲详情加载失败', '请稍后重试') })
+      .finally(() => { if (!cancelled) setDetailLoading(false) })
+    return () => { cancelled = true }
+  }, [routeSongId, isCurrentSong])
   const { prevPlay, nextPlay, getCurrentSong } = usePlaylistStore()
   const [tab, setTab] = useState<DetailTab>(
     initialTab === 'comments' || initialTab === 'similar' ? initialTab : 'lyrics'
@@ -357,7 +384,7 @@ export default function SongDetailPage() {
   const [similarSongs, setSimilarSongs] = useState<SongResult[]>([])
   const [songMeta, setSongMeta] = useState<SongMeta>({ creators: [], copyrightRcmd: [] })
   const [metaLoading, setMetaLoading] = useState(false)
-  const [fav, setFav] = useState(false)
+  const fav = useIsFavorite(playMusic?.id)
   const [hoverPct, setHoverPct] = useState<number | null>(null)
   const [downloading, setDownloading] = useState(false)
 
@@ -366,33 +393,31 @@ export default function SongDetailPage() {
 
   useEffect(() => {
     const nextTab = new URLSearchParams(location.search).get('tab')
-    if (nextTab === 'lyrics' || nextTab === 'comments' || nextTab === 'similar') {
-      setTab(nextTab)
-    }
+    setTab(nextTab === 'comments' || nextTab === 'similar' ? nextTab : 'lyrics')
   }, [location.search])
 
   // 智能返回：有历史则返回，否则跳转到首页
-  const handleBack = () => {
-    // location.key === 'default' 表示直接访问该页面（无历史栈）
-    if (location.key === 'default' || window.history.length <= 2) {
-      navigate('/', { replace: true })
-    } else {
-      navigate(-1)
-    }
-  }
+  const handleBack = useBackNavigation()
 
-  useEffect(() => { if (songId) setFav(isFavorite(Number(songId))) }, [songId])
   useEffect(() => {
     if (!songId) return
     let cancelled = false
     setMetaLoading(true)
-    getMusicLrc(Number(songId)).then(r => setLyrics(parseApiLyric(r.data)?.lrcArray || []))
+    setSongMeta({ creators: [], copyrightRcmd: [] })
+    setLyrics([])
+    setSimilarSongs([])
+    setCommentTotal(0)
+    getMusicLrc(Number(songId)).then(r => {
+      if (!cancelled) setLyrics(parseApiLyric(r.data)?.lrcArray || [])
+    }).catch(() => {})
     // 预取评论总数，Tab 标签立即显示数字
     getNewComment({ id: Number(songId), type: 0, pageNo: 1, pageSize: 1, sortType: 2 }).then((response) => {
+      if (cancelled) return
       const total = firstApiValue(response?.data, [['data', 'totalCount'], ['totalCount'], ['total']])
       setCommentTotal(typeof total === 'number' ? total : 0)
-    })
+    }).catch(() => {})
     getSimiSong(Number(songId)).then(r => {
+      if (cancelled) return
       // ★ 相似歌曲 API 返回字段可能是 artists/album 而非 ar/al，需要归一化
       const raw: unknown[] = Array.isArray(r?.data?.songs) ? r.data.songs : []
       setSimilarSongs(raw.map((value) => {
@@ -414,7 +439,7 @@ export default function SongDetailPage() {
           picUrl: firstApiString(song, [['picUrl'], ['al', 'picUrl'], ['album', 'picUrl'], ['album', 'pic_id']]),
         } as unknown as SongResult
       }))
-    })
+    }).catch(() => {})
     Promise.allSettled([
       getSongWiki(Number(songId)),
       getSongCreators(Number(songId)),
@@ -446,18 +471,25 @@ export default function SongDetailPage() {
 
   const handlePrev = () => { prevPlay(); const s = getCurrentSong(); if (s) playSong(s) }
   const handleNext = () => { nextPlay(); const s = getCurrentSong(); if (s) playSong(s) }
-  const handleFav = () => { if (!songId) return; setFav(toggleFavorite(playMusic!)) }
+  const handleFav = () => { if (playMusic) toggleFavorite(playMusic) }
+  const handleTogglePlay = () => { if (!playMusic) return; if (isCurrentSong) togglePlay(); else void playSong(playMusic) }
   const handleTabChange = (nextTab: DetailTab) => {
+    if (nextTab === tab) return
     setTab(nextTab)
     const search = nextTab === 'lyrics' ? '' : `?tab=${nextTab}`
     navigate({ pathname: location.pathname, search }, { replace: true })
   }
 
   useEffect(() => {
-    if (!songId || String(songId) === routeSongId) return
-    navigate(`/song/${songId}${location.search}`, { replace: true })
-  }, [songId, routeSongId, location.search, navigate])
+    const previousId = previousPlayingId.current
+    const playingId = player.playMusic?.id
+    previousPlayingId.current = playingId
+    if (playingId !== previousId && String(previousId) === routeSongId && playingId !== undefined) {
+      navigate(`/song/${playingId}${location.search}`, { replace: true })
+    }
+  }, [player.playMusic?.id, routeSongId, location.search, navigate])
   const handleProgressClick = (e: React.MouseEvent) => {
+    if (!isCurrentSong) return
     const r = e.currentTarget.getBoundingClientRect()
     seekTo(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration)
   }
@@ -574,14 +606,14 @@ export default function SongDetailPage() {
         <div className="w-full text-center mb-0.5">
           <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white leading-tight line-clamp-2"
             style={{ textShadow: hasCover ? '0 1px 3px rgba(0,0,0,0.06)' : undefined }}>
-            {playMusic?.name || '未播放'}
+            {playMusic?.name || (isLoading ? '加载歌曲详情…' : '歌曲详情加载失败')}
           </h1>
           <p className="text-[13px] text-gray-500 dark:text-white/35 mt-1">
-            {playMusic?.ar?.map(a => a.name).join(' / ') || '—'}
+            <ArtistLinks artists={getSongArtists(playMusic)} fallback="—" />
           </p>
-          {playMusic?.al?.name && (
+          {getSongAlbum(playMusic)?.name && (
             <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-white/[0.05] text-gray-500 dark:text-white/30">
-              {playMusic.al.name}
+              <AlbumLink album={getSongAlbum(playMusic)} />
             </span>
           )}
         </div>
@@ -624,7 +656,7 @@ export default function SongDetailPage() {
           <button onClick={handlePrev} className="p-1 text-gray-500 dark:text-gray-300 hover:text-[#e60026] transition-colors">
             <SkipBack className="w-6 h-6" />
           </button>
-          <button onClick={togglePlay}
+          <button onClick={handleTogglePlay}
             className="w-[60px] h-[60px] flex items-center justify-center rounded-full bg-[#e60026] text-white hover:bg-[#c4001f] shadow-lg shadow-red-500/20 hover:shadow-red-500/30 hover:scale-105 transition-all active:scale-95">
             {isPlay ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
           </button>
@@ -725,10 +757,10 @@ export default function SongDetailPage() {
                       <img src={coverUrl(infoVisualUrl)} alt="" className="h-11 w-11 rounded-md object-cover" />
                       <div className="min-w-0">
                         <div className="text-xs font-semibold text-gray-700 dark:text-gray-200 line-clamp-1">
-                          {playMusic?.al?.name || 'Track Notes'}
+                          {getSongAlbum(playMusic)?.name ? <AlbumLink album={getSongAlbum(playMusic)} /> : 'Track Notes'}
                         </div>
                         <div className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500 line-clamp-1">
-                          {playMusic?.ar?.map(a => a.name).join(' / ') || 'RanNuan Music'}
+                          <ArtistLinks artists={getSongArtists(playMusic)} fallback="RanNuan Music" />
                         </div>
                       </div>
                     </div>
@@ -756,7 +788,7 @@ export default function SongDetailPage() {
                           ? 'text-[#e60026] font-bold text-lg scale-105 -translate-x-1'
                           : 'text-gray-400 dark:text-gray-500 text-sm opacity-65 hover:opacity-90'
                       }`}
-                      onClick={() => seekTo(l.startTime || 0)}
+                      onClick={() => { if (isCurrentSong) seekTo(l.startTime || 0) }}
                       style={{ transformOrigin: 'left center' }}>
                       <p>{l.text}</p>
                       {(l.trText || l.romaText) && (

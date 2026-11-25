@@ -7,6 +7,12 @@ let _cache: SongResult[] | null = null
 let _idSet: Set<string> | null = null
 
 let _writeTimer: ReturnType<typeof setTimeout> | null = null
+const listeners = new Set<() => void>()
+
+export function subscribeFavorites(listener: () => void) {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
 
 function getCache(): SongResult[] {
   if (!_cache) {
@@ -52,20 +58,12 @@ function flushWrite(songs: SongResult[]) {
 
 export function toggleFavorite(song: SongResult): boolean {
   const stored = getCache()
-  const index = stored.findIndex((s) => s.id === song.id)
-  if (index !== -1) {
-    stored.splice(index, 1)
-    // 保留并同步内存缓存。写入 localStorage 虽然防抖，但 UI 读取不能
-    // 在这段时间内退回旧磁盘值，否则点击后会立即显示回未收藏。
-    _idSet = new Set(stored.map((s) => String(s.id)))
-    debouncedWrite([...stored])
-    return false
-  } else {
-    stored.push(song)
-    _idSet = new Set(stored.map((s) => String(s.id)))
-    debouncedWrite([...stored])
-    return true
-  }
+  const exists = isFavorite(song.id)
+  _cache = exists ? stored.filter(item => String(item.id) !== String(song.id)) : [...stored, song]
+  _idSet = new Set(_cache.map(item => String(item.id)))
+  debouncedWrite(_cache)
+  listeners.forEach(listener => listener())
+  return !exists
 }
 
 export function getFavorites(): SongResult[] {

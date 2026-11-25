@@ -1,3 +1,5 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { ArtistLinks } from '@/components/common/MusicLinks'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getMvDetail, getMvUrl, getSimiMv } from '@shared'
@@ -30,6 +32,7 @@ function pickUrl(res: any) {
 export default function MvPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const mvId = Number(id)
 
   const [detail, setDetail] = useState<any>(null)
@@ -122,7 +125,7 @@ export default function MvPage() {
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <Video className="w-14 h-14 mb-3 opacity-25" />
         <p className="text-sm">{error || 'MV 不存在'}</p>
-        <button onClick={() => navigate(-1)} className="mt-4 px-4 py-2 rounded-full bg-[#e60026] text-white text-sm">返回</button>
+        <button onClick={goBack} className="mt-4 px-4 py-2 rounded-full bg-[#e60026] text-white text-sm">返回</button>
       </div>
     )
   }
@@ -142,7 +145,7 @@ export default function MvPage() {
         )}
 
         <div className="relative z-10 max-w-5xl mx-auto px-6 pt-4 pb-10">
-          <button onClick={() => navigate(-1)} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#e60026] dark:text-gray-400 dark:hover:text-white">
+          <button onClick={goBack} className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#e60026] dark:text-gray-400 dark:hover:text-white">
             <ArrowLeft className="w-4 h-4" /> 返回
           </button>
 
@@ -167,11 +170,7 @@ export default function MvPage() {
             <div className="min-w-0">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{title}</h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                {artists.length > 0 ? artists.map((artist: any, index: number) => (
-                  <button key={artist.id || artist.name} onClick={() => artist.id && navigate(`/artist/${artist.id}`)} className="hover:text-[#e60026]">
-                    {artist.name}{index < artists.length - 1 ? ' / ' : ''}
-                  </button>
-                )) : <span>{detail.artistName}</span>}
+                <ArtistLinks artists={artists.length ? artists : detail.artistName ? [{ id: detail.artistId, name: detail.artistName }] : []} />
                 {detail.publishTime && <span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{detail.publishTime}</span>}
               </div>
             </div>
@@ -216,7 +215,7 @@ export default function MvPage() {
             {similar.length === 0 ? (
               <p className="text-sm text-gray-400">暂无相关 MV</p>
             ) : similar.slice(0, 8).map((mv: any) => (
-              <button
+              <div
                 key={mv.id}
                 onClick={() => navigate(`/mv/${mv.id}`)}
                 className="group flex w-full gap-3 text-left"
@@ -227,9 +226,9 @@ export default function MvPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 text-sm font-medium text-gray-800 group-hover:text-[#e60026] dark:text-gray-200">{mv.name}</p>
-                  <p className="mt-1 truncate text-xs text-gray-400">{mv.artistName}</p>
+                  <p className="mt-1 truncate text-xs text-gray-400"><ArtistLinks artists={mv.artists?.length ? mv.artists : mv.artistName ? [{ id: mv.artistId, name: mv.artistName }] : []} /></p>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </aside>

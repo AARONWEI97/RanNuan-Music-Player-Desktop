@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { usePlayerStore, usePlaylistStore } from '@shared'
 import { togglePlay, playSong } from '@/services/audioService'
@@ -9,6 +10,7 @@ import { togglePlay, playSong } from '@/services/audioService'
  */
 export function useTrayEvents() {
   useEffect(() => {
+    if (!isTauri()) return
     const unlisteners: UnlistenFn[] = []
 
     // ⏯ 播放 / 暂停

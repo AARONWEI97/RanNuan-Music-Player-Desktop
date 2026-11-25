@@ -1,3 +1,4 @@
+import { ArtistLinks } from '@/components/common/MusicLinks'
 import { useEffect, useState, useMemo, useCallback, memo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -300,7 +301,7 @@ function AlbumGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
       ) : (
         <>
           <div className="grid grid-cols-5 gap-4">
-            {renderedItems.map((a: { id: number; name: string; picUrl?: string; blurPicUrl?: string; coverImgUrl?: string; size?: number; artist?: { id: number; name: string }; artists?: { name: string }[] }) => (
+            {renderedItems.map((a: { id: number; name: string; picUrl?: string; blurPicUrl?: string; coverImgUrl?: string; size?: number; artist?: { id: number; name: string }; artists?: { id?: number; name: string }[] }) => (
               <div key={a.id} className="grid-card-item cursor-pointer group" onClick={() => onNavigate(`/album/${a.id}`)}>
                 <div className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-xl overflow-hidden relative shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-transform">
                   <img src={coverUrl(a.picUrl || a.blurPicUrl || a.coverImgUrl)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
@@ -308,7 +309,7 @@ function AlbumGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Play className="w-8 h-8 text-white fill-white" /></div>
                 </div>
                 <p className="text-sm font-medium mt-2 truncate">{a.name}</p>
-                <p className="text-xs text-gray-500 truncate">{a.artist?.name || a.artists?.map(ar => ar.name).join(' / ') || ''}</p>
+                <p className="text-xs text-gray-500 truncate"><ArtistLinks artists={a.artists?.length ? a.artists : a.artist ? [a.artist] : []} /></p>
               </div>
             ))}
           </div>
@@ -357,7 +358,7 @@ function MvGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4">
-            {renderedItems.map((mv: { id: number; name: string; imgurl?: string; cover?: string; picUrl?: string; imgurl16v9?: string; playCount?: number; duration?: number; artistName?: string }) => (
+            {renderedItems.map((mv: { id: number; name: string; imgurl?: string; cover?: string; picUrl?: string; imgurl16v9?: string; playCount?: number; duration?: number; artistName?: string; artistId?: number; artists?: { id?: number; name: string }[] }) => (
               <div key={mv.id} className="grid-card-item cursor-pointer group rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 hover:shadow-lg hover:-translate-y-0.5 transition-transform" onClick={() => onNavigate(`/mv/${mv.id}`)}>
                 <div className="relative aspect-video bg-gray-200 dark:bg-gray-700 overflow-hidden">
                   <img src={coverUrl(mv.imgurl || mv.cover || mv.picUrl || mv.imgurl16v9)} alt={mv.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
@@ -365,7 +366,7 @@ function MvGrid({ onNavigate }: { onNavigate: (path: string) => void }) {
                   {(mv.playCount ?? 0) > 0 && <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm"><Play className="w-2.5 h-2.5" />{formatCount(mv.playCount ?? 0)}</div>}
                   {mv.duration && <div className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md backdrop-blur-sm">{Math.floor(mv.duration / 60000)}:{String(Math.floor((mv.duration % 60000) / 1000)).padStart(2, '0')}</div>}
                 </div>
-                <div className="p-3"><p className="text-sm font-medium truncate">{mv.name}</p>{mv.artistName && <p className="text-xs text-gray-500 truncate mt-0.5">{mv.artistName}</p>}</div>
+                <div className="p-3"><p className="text-sm font-medium truncate">{mv.name}</p>{mv.artistName && <p className="text-xs text-gray-500 truncate mt-0.5"><ArtistLinks artists={mv.artists?.length ? mv.artists : [{ id: mv.artistId, name: mv.artistName }]} /></p>}</div>
               </div>
             ))}
           </div>

@@ -1,4 +1,7 @@
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { ArtistLinks } from '@/components/common/MusicLinks'
+import { useParams } from 'react-router-dom'
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { showToast } from '@/utils/toast'
 import { useEffect, useState } from 'react'
 import { getAlbumDetail, usePlaylistStore } from '@shared'
 import type { SongResult } from '@shared'
@@ -10,28 +13,11 @@ import { ArrowLeft, Disc, Play, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function AlbumPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [album, setAlbum] = useState<{ name?: string; picUrl?: string; artist?: { id: number; name: string }; description?: string } | null>(null)
+  const handleBack = useBackNavigation()
+  const [album, setAlbum] = useState<{ name?: string; picUrl?: string; artist?: { id: number; name: string }; artists?: { id: number; name: string }[]; description?: string } | null>(null)
   const [songs, setSongs] = useState<SongResult[]>([])
   const [descExpanded, setDescExpanded] = useState(false)
   const { setPlayList, setPlayListIndex } = usePlaylistStore()
-
-  const returnTo = (() => {
-    const state = location.state as { returnTo?: unknown } | null
-    return typeof state?.returnTo === 'string' && state.returnTo.startsWith('/')
-      ? state.returnTo
-      : null
-  })()
-
-  const handleBack = () => {
-    if (returnTo) {
-      // 替换专辑页历史记录，避免返回歌手页后再次点后退又回到专辑页。
-      navigate(returnTo, { replace: true })
-      return
-    }
-    navigate(-1)
-  }
 
   const handlePlayAll = () => {
     if (songs.length === 0) return
@@ -61,10 +47,18 @@ export default function AlbumPage() {
 
   useEffect(() => {
     if (!id) return
+    let cancelled = false
     getAlbumDetail(Number(id)).then((res) => {
+      if (cancelled) return
       setAlbum(res?.data?.album)
-      setSongs(res?.data?.songs || [])
-    })
+      const albumData = res?.data?.album
+      setSongs((res?.data?.songs || []).map((song: SongResult) => ({
+        ...song,
+        al: song.al?.id ? song.al : { id: Number(id), name: albumData?.name || '', picUrl: albumData?.picUrl },
+        ar: song.ar?.length ? song.ar : song.artists?.length ? song.artists : albumData?.artists || (albumData?.artist ? [albumData.artist] : []),
+      })))
+    }).catch(() => { if (!cancelled) showToast('专辑加载失败', '请稍后重试') })
+    return () => { cancelled = true }
   }, [id])
 
   return (
@@ -90,12 +84,9 @@ export default function AlbumPage() {
         </div>
         <div className="flex flex-col justify-center flex-1">
           <h1 className="text-2xl font-bold">{album?.name}</h1>
-          <button
-            className="text-sm text-[#e60026] mt-2 hover:underline text-left"
-            onClick={() => album?.artist && navigate(`/artist/${album.artist.id}`)}
-          >
-            {album?.artist?.name}
-          </button>
+          <div className="text-sm text-[#e60026] mt-2 text-left">
+            <ArtistLinks artists={album?.artists?.length ? album.artists : album?.artist ? [album.artist] : []} />
+          </div>
           {album?.description && (
             <div className="mt-2">
               <p className={`text-sm text-gray-500 ${descExpanded ? '' : 'line-clamp-2'}`}>

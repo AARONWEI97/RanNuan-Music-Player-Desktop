@@ -1,14 +1,14 @@
-import { memo, useCallback, useState, useEffect } from 'react'
+import { memo, useCallback, useState } from 'react'
 import type { SongResult } from '@shared'
 import { thumbUrl } from '@/utils/image'
 import { usePlaylistStore } from '@shared'
-import { isFavorite as checkIsFavorite, toggleFavorite } from '@/store/favoritesStore'
+import { toggleFavorite } from '@/store/favoritesStore'
+import { useIsFavorite } from '@/hooks/useFavorites'
+import { useSongMenu } from '@/hooks/useSongMenu'
+import { playSong } from '@/services/audioService'
+import { SongMetadata } from './MusicLinks'
 import { showToast } from '@/utils/toast'
-import { showContextMenu } from '@/hooks/useContextMenu'
-import { openAddToPlaylistModal } from '@/services/addToPlaylistModal'
-import { useAuthStore } from '@/store/authStore'
-import { useNavigate } from 'react-router-dom'
-import { Play, ListPlus, Heart, MoreHorizontal, User, DiscAlbum, Download, Info, Music, MessageCircle, Trash2, RefreshCw, FolderPlus } from 'lucide-react'
+import { ListPlus, Heart, MoreHorizontal } from 'lucide-react'
 
 interface SongRowProps {
   song: SongResult
@@ -17,15 +17,13 @@ interface SongRowProps {
   showPic?: boolean
   showAlbum?: boolean
   showDuration?: boolean
-  isFavorite?: boolean
   onPlay?: () => void
   onAddToNext?: () => void
   onToggleFavorite?: () => void
-  onMore?: (e: React.MouseEvent) => void
   // ── 新增：歌单上下文 / 音源重解析 ──
   inOwnPlaylist?: boolean
   playlistId?: number
-  onRemoveFromPlaylist?: (song: SongResult) => void
+  onRemoveFromPlaylist?: (song: SongResult) => void | Promise<void>
   onReparse?: (song: SongResult) => void
 }
 
@@ -36,29 +34,16 @@ const SongRow = memo(function SongRow({
   showPic = true,
   showAlbum = true,
   showDuration = true,
-  isFavorite: isFavoriteProp,
   onPlay,
   onAddToNext,
   onToggleFavorite,
-  onMore,
   inOwnPlaylist,
   onRemoveFromPlaylist,
   onReparse,
 }: SongRowProps) {
-  const navigate = useNavigate()
   const addToNextPlay = usePlaylistStore((s) => s.addToNextPlay)
-
-  // ★ 本地收藏状态 — 点击时立即更新 UI，无需刷新页面
-  const [fav, setFav] = useState(() =>
-    isFavoriteProp !== undefined ? isFavoriteProp : checkIsFavorite(song.id)
-  )
-
-  // ★ 同步外部 prop 变化（父组件传的 isFavorite 变了）
-  useEffect(() => {
-    if (isFavoriteProp !== undefined) {
-      setFav(isFavoriteProp)
-    }
-  }, [isFavoriteProp])
+  const fav = useIsFavorite(song?.id)
+  const openSongMenu = useSongMenu()
 
   // ★ 菜单打开时保持高亮
   const [menuOpen, setMenuOpen] = useState(false)
@@ -73,124 +58,31 @@ const SongRow = memo(function SongRow({
 
   const handleToggleFav = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    // 父页面有回调时仍要立即更新本行的本地状态；收藏存储本身不是
-    // React/Zustand store，单靠回调不会触发 SongRow 重渲染。
     if (onToggleFavorite) {
       onToggleFavorite()
-      setFav(!fav)
       return
     }
     const added = toggleFavorite(song)
-    setFav(added) // ★ 立即更新 UI，无需刷新
     showToast(added ? '已收藏' : '已取消收藏', song.name)
-  }, [fav, onToggleFavorite, song])
+  }, [onToggleFavorite, song])
 
-  const openAddToPlaylist = useCallback(() => {
-    if (!useAuthStore.getState().isLoggedIn) {
-      showToast('请先登录', '登录后才能添加歌曲到歌单')
-      return
-    }
-    openAddToPlaylistModal(song)
-  }, [song])
-
-  const openMenu = useCallback((x: number, y: number) => {
+  const openMenu = (event: React.MouseEvent) => {
+    openSongMenu(event, song, {
+      onPlay: onPlay || (() => { void playSong(song) }),
+      onAddToNext,
+      onToggleFavorite: onToggleFavorite || (() => {
+        const added = toggleFavorite(song)
+        showToast(added ? '已收藏' : '已取消收藏', song.name)
+      }),
+      onRemoveFromPlaylist: inOwnPlaylist && onRemoveFromPlaylist ? () => onRemoveFromPlaylist(song) : undefined,
+      onReparse: onReparse ? () => onReparse(song) : undefined,
+      onClose: () => setMenuOpen(false),
+    })
     setMenuOpen(true)
-    showContextMenu(x, y, [
-      {
-        label: '播放',
-        icon: <Play className="w-4 h-4" />,
-        onClick: () => onPlay?.(),
-      },
-      {
-        label: '下一首播放',
-        icon: <ListPlus className="w-4 h-4" />,
-        onClick: () => {
-          addToNextPlay(song)
-          showToast('已添加到播放队列', '下一首播放')
-        },
-      },
-      {
-        label: '添加到歌单',
-        icon: <FolderPlus className="w-4 h-4" />,
-        onClick: openAddToPlaylist,
-      },
-      {
-        label: fav ? '取消收藏' : '收藏',
-        icon: <Heart className={`w-4 h-4 ${fav ? 'fill-[#e60026] text-[#e60026]' : ''}`} />,
-        onClick: () => {
-          const added = toggleFavorite(song)
-          setFav(added)
-          showToast(added ? '已收藏' : '已取消收藏', song.name)
-        },
-      },
-      { label: '', divider: true, onClick: () => {} },
-      {
-        label: `歌手: ${song.ar?.map(a => a.name).join('/') || '未知'}`,
-        icon: <User className="w-4 h-4" />,
-        onClick: () => song.ar?.[0]?.id && navigate(`/artist/${song.ar[0].id}`),
-      },
-      {
-        label: `专辑: ${song.al?.name || '未知'}`,
-        icon: <DiscAlbum className="w-4 h-4" />,
-        onClick: () => song.al?.id && navigate(`/album/${song.al.id}`),
-      },
-      { label: '', divider: true, onClick: () => {} },
-      {
-        label: '歌曲详情',
-        icon: <Info className="w-4 h-4" />,
-        onClick: () => navigate(`/song/${song.id}`),
-      },
-      {
-        label: '下载',
-        icon: <Download className="w-4 h-4" />,
-        onClick: async () => {
-          const { queueSongDownload } = await import('@/utils/download')
-          await queueSongDownload(song)
-        },
-      },
-      { label: '', divider: true, onClick: () => {} },
-      // ★ 相似推荐
-      {
-        label: '相似推荐',
-        icon: <Music className="w-4 h-4" />,
-        onClick: () => navigate(`/song/${song.id}?tab=similar`),
-      },
-      // ★ 查看评论
-      {
-        label: '查看评论',
-        icon: <MessageCircle className="w-4 h-4" />,
-        onClick: () => navigate(`/song/${song.id}/comments`),
-      },
-      // ★ 从歌单删除（仅当 inOwnPlaylist && playlistId）
-      ...(inOwnPlaylist && onRemoveFromPlaylist ? [{
-        label: '从歌单中删除',
-        icon: <Trash2 className="w-4 h-4 text-red-500" />,
-        onClick: () => onRemoveFromPlaylist(song),
-      }] : []),
-      // ★ 重新解析音源（仅当 onReparse 存在）
-      ...(onReparse ? [{
-        label: '选择播放音源',
-        icon: <RefreshCw className="w-4 h-4" />,
-        onClick: () => onReparse(song),
-      }] : []),
-    ], { onClose: () => setMenuOpen(false) })
-  }, [onPlay, addToNextPlay, song, fav, navigate, inOwnPlaylist, onRemoveFromPlaylist, onReparse, openAddToPlaylist])
-
-  const handleMore = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (onMore) { onMore(e); return }
-    openMenu(e.clientX, e.clientY)
-  }, [onMore, openMenu])
-
-  // ★ 右键 → 显示自定义菜单，阻止浏览器原生菜单
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    openMenu(e.clientX, e.clientY)
-  }, [openMenu])
+  }
 
   if (!song || typeof song.id === 'undefined') return null
 
-  const artistName = song.ar?.map((a) => a.name).join(' / ') || '未知歌手'
   const isRowHighlighted = menuOpen
 
   return (
@@ -200,28 +92,28 @@ const SongRow = memo(function SongRow({
           ? 'bg-gray-100 dark:bg-white/[0.08] ring-1 ring-[#e60026]/20'
           : 'hover:bg-gray-100 dark:hover:bg-white/5'
       }`}
-      onClick={onPlay}
-      onContextMenu={handleContextMenu}
+      onClick={onPlay || (() => { void playSong(song) })}
+      onContextMenu={openMenu}
     >
       {showIndex && (
         <span className="text-xs text-gray-400 w-5 text-center select-none">{index + 1}</span>
       )}
       {showPic && (
         <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 overflow-hidden flex-shrink-0">
-          <img src={thumbUrl(song.picUrl || song.al?.picUrl || '')} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+          <img src={thumbUrl(song.picUrl || song.al?.picUrl || song.album?.picUrl || '')} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
         </div>
       )}
       <div className="flex-1 min-w-0 select-none">
         <div className="text-sm font-medium truncate">{song.name}</div>
         <div className="text-xs text-gray-500 truncate">
-          {artistName}{showAlbum && song.al?.name ? ` · ${song.al.name}` : ''}
+          <SongMetadata song={song} showAlbum={showAlbum} />
         </div>
       </div>
 
       {/* ─── 操作按钮：菜单打开时保持显示 ─── */}
       <div
         className={`flex items-center gap-0.5 transition-opacity duration-150 ${
-          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
         }`}
       >
         <button
@@ -243,12 +135,14 @@ const SongRow = memo(function SongRow({
           <Heart className={`w-[18px] h-[18px] ${fav ? 'fill-current' : ''}`} />
         </button>
         <button
-          onClick={handleMore}
+          onClick={openMenu}
           className={`p-1.5 rounded-md transition-colors active:scale-90 ${
             menuOpen
               ? 'text-[#e60026] bg-[#e60026]/8'
               : 'text-gray-400 hover:text-[#e60026] hover:bg-gray-200 dark:hover:bg-white/10'
           }`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           title="更多操作"
         >
           <MoreHorizontal className="w-[18px] h-[18px]" />
@@ -262,14 +156,6 @@ const SongRow = memo(function SongRow({
       ) : null}
     </div>
   )
-}, (prev, next) => {
-  return prev.song.id === next.song.id
-    && prev.index === next.index
-    && prev.showIndex === next.showIndex
-    && prev.showPic === next.showPic
-    && prev.showAlbum === next.showAlbum
-    && prev.showDuration === next.showDuration
-    && prev.isFavorite === next.isFavorite
 })
 
 export default SongRow

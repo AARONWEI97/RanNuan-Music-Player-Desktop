@@ -1,3 +1,4 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getDjDetail, getDjProgram, type SongResult, usePlaylistStore } from '@shared'
@@ -63,6 +64,7 @@ function normalizeProgram(program: any, radio: any): SongResult | null {
 export default function DjPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const radioId = Number(id)
   const { setPlayList, setPlayListIndex } = usePlaylistStore()
 
@@ -156,7 +158,7 @@ export default function DjPage() {
   if (error) {
     return (
       <div>
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors mb-5">
+        <button onClick={goBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors mb-5">
           <ArrowLeft className="w-4 h-4" /> 返回
         </button>
         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -169,7 +171,7 @@ export default function DjPage() {
 
   return (
     <div className="space-y-6">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors">
+      <button onClick={goBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors">
         <ArrowLeft className="w-4 h-4" /> 返回
       </button>
 

@@ -1,4 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { getPlaylistDetail, getPlaylistTrackAll, subscribePlaylist, updatePlaylistTracks, type SongResult, usePlaylistStore } from '@shared'
 import { playSong } from '@/services/audioService'
@@ -23,7 +24,7 @@ function fmtDate(t: number) {
 
 function normalizeSong(s: any): SongResult {
   return {
-    id: s.id, name: s.name,
+    ...s, id: s.id, name: s.name,
     picUrl: s.al?.picUrl || s.album?.picUrl || '',
     ar: s.ar || s.artists?.map((a: any) => ({ id: a.id, name: a.name })) || [],
     al: s.al || s.album || { id: 0, name: '', picUrl: '' },
@@ -34,7 +35,7 @@ function normalizeSong(s: any): SongResult {
 
 export default function PlaylistPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const [playlist, setPlaylist] = useState<any>(null)
   const [tracks, setTracks] = useState<SongResult[]>([])
   const [loading, setLoading] = useState(true)
@@ -122,7 +123,7 @@ export default function PlaylistPage() {
 
   return (
     <div className="space-y-6">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors">
+      <button onClick={goBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-[#e60026] transition-colors">
         <ChevronLeft className="w-4 h-4" /> 返回
       </button>
 

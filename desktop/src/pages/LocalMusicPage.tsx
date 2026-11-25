@@ -1,3 +1,5 @@
+import { SongMetadata } from '@/components/common/MusicLinks'
+import type { MusicEntity } from '@/utils/songMetadata'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { FolderOpen, Music, Loader, Play, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { getSearch } from '@shared'
@@ -12,6 +14,8 @@ interface LocalSong {
   fileName?: string
   size: number
   artist?: string
+  artists?: MusicEntity[]
+  albumId?: number
   picUrl?: string
   album?: string
   titleSource?: 'tag' | 'filename' | 'match'
@@ -32,8 +36,8 @@ interface LocalAudioMetadata {
 
 interface SearchSong {
   name?: string
-  ar?: Array<{ name?: string }>
-  al?: { name?: string; picUrl?: string }
+  ar?: Array<{ id?: number; name: string }>
+  al?: { id?: number; name?: string; picUrl?: string }
 }
 
 interface SearchResponse {
@@ -130,7 +134,7 @@ function mergeSearchInfo(song: LocalSong, info: Awaited<ReturnType<typeof search
 }
 
 // ── 搜索封面 ──
-async function searchMatch(name: string, artist?: string): Promise<{ name?: string; picUrl?: string; artist?: string; album?: string } | null> {
+async function searchMatch(name: string, artist?: string): Promise<{ name?: string; picUrl?: string; artist?: string; album?: string; artists?: MusicEntity[]; albumId?: number } | null> {
   const queries: string[] = []
   if (artist) { queries.push(`${name} ${artist}`, `${artist} ${name}`, name) }
   else {
@@ -152,6 +156,8 @@ async function searchMatch(name: string, artist?: string): Promise<{ name?: stri
           picUrl: best.al?.picUrl,
           artist: best.ar?.map((item) => item.name).filter(Boolean).join(' / ') || undefined,
           album: best.al?.name,
+          artists: best.ar,
+          albumId: best.al?.id,
         }
       }
     } catch { /* next */ }
@@ -313,8 +319,8 @@ export default function LocalMusicPage() {
       id: song.id,
       name: song.name,
       picUrl: song.picUrl || '',
-      ar: [{ id: 0, name: song.artist || '本地音乐' }],
-      al: { id: 0, name: song.album || '本地音乐' },
+      ar: song.artists?.map(artist => ({ ...artist, id: artist.id || 0 })) || [{ id: 0, name: song.artist || '本地音乐' }],
+      al: { id: song.albumId || 0, name: song.album || '本地音乐' },
       count: 0,
       playMusicUrl: song._blobUrl,
     })
@@ -413,7 +419,7 @@ export default function LocalMusicPage() {
                     {song.name} {disabled && <span className="text-[10px] text-red-400 ml-1 font-normal">(数据丢失)</span>}
                   </p>
                   <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
-                    {disabled ? '文件数据已丢失，请重新导入' : (song.artist || '未知歌手') + (song.album ? ` · ${song.album}` : '')}
+                    {disabled ? '文件数据已丢失，请重新导入' : <SongMetadata song={{ ar: song.artists?.map(artist => ({ ...artist, id: artist.id || 0 })) || (song.artist ? [{ id: 0, name: song.artist }] : []), al: { id: song.albumId || 0, name: song.album || '' } }} />}
                   </p>
                 </div>
 

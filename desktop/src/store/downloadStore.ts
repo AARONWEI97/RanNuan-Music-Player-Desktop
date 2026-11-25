@@ -6,10 +6,11 @@ import {
   cancelDownload as cancelAdd,
   setDownloadCallbacks,
   type DownloadTask,
+  type SongMeta,
   type DownloadState,
 } from '@/utils/download'
 
-export interface CompletedItem {
+export interface CompletedItem extends SongMeta {
   songId: number
   songName: string
   artist?: string
@@ -24,7 +25,7 @@ interface DownloadStore {
   tasks: Map<string, DownloadTask>
   completed: CompletedItem[]
 
-  downloadSong: (songId: number, songName: string, url: string, artist?: string, meta?: { picUrl?: string; album?: string }) => string
+  downloadSong: (songId: number, songName: string, url: string, artist?: string, meta?: SongMeta) => string
   downloadBatch: (songs: Array<{ songId: number; songName: string; url: string; artist?: string; picUrl?: string; album?: string }>) => string[]
   cancelTask: (taskId: string) => void
   clearCompleted: () => void
@@ -67,6 +68,8 @@ export const useDownloadStore = create<DownloadStore>()(
                 fileSize: t.total > 0 ? t.total : undefined,
                 picUrl: t.picUrl,
                 album: t.album,
+                artists: t.artists,
+                albumId: t.albumId,
               }
               
               return {

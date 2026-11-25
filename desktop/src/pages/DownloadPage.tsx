@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom'
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { ArtistLinks, AlbumLink } from '@/components/common/MusicLinks'
 import { useState, useEffect } from 'react'
 import { useDownloadStore, type CompletedItem } from '@/store/downloadStore'
 import { coverUrl, thumbUrl } from '@/utils/image'
@@ -53,13 +54,13 @@ function CompletedRow({
       <div className="min-w-0">
         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{item.songName}</p>
         {item.artist && (
-          <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">{item.artist}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5"><ArtistLinks artists={item.artists?.length ? item.artists : item.artist?.split(' / ').map(name => ({ name }))} /></p>
         )}
       </div>
 
       {/* 专辑 */}
       <div className="min-w-0">
-        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{item.album || '-'}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{item.album ? <AlbumLink album={{ id: item.albumId, name: item.album }} /> : '-'}</p>
       </div>
 
       {/* 文件大小 */}
@@ -105,7 +106,7 @@ function CompletedRow({
 
 /* ─── 主页面 ─── */
 export default function DownloadPage() {
-  const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const tasks = useDownloadStore((s) => s.tasks)
   const completed = useDownloadStore((s) => s.completed)
   const clearCompleted = useDownloadStore((s) => s.clearCompleted)
@@ -156,7 +157,7 @@ export default function DownloadPage() {
         <div className="relative z-10 px-6 pt-5 pb-6">
           {/* 返回 */}
           <button
-            onClick={() => navigate(-1)}
+            onClick={goBack}
             className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white transition-colors px-2 py-1 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.06]"
           >
             <ArrowLeft className="w-4 h-4" /> 返回
@@ -302,7 +303,7 @@ export default function DownloadPage() {
                         </span>
                         {task.artist && (
                           <span className="text-xs text-gray-400 dark:text-gray-500 truncate">
-                            {task.artist}
+                            <ArtistLinks artists={task.artists?.length ? task.artists : task.artist?.split(' / ').map(name => ({ name }))} />
                           </span>
                         )}
                       </div>

@@ -1,3 +1,5 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { SongMetadata, ArtistLinks, AlbumLink } from '@/components/common/MusicLinks'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -44,8 +46,8 @@ interface PlaylistItem {
 }
 interface AlbumItem {
   id: number; name: string; picUrl: string; coverImgUrl?: string; size?: number
-  artists?: { name: string }[]
-  artist?: { name: string }; publishTime?: number
+  artists?: { id?: number; name: string }[]
+  artist?: { id?: number; name: string }; publishTime?: number
 }
 interface ArtistItem {
   id: number; name: string; picUrl?: string; img1v1Url?: string
@@ -199,8 +201,8 @@ function Card({ item, nav, onEdit, editMode }: { item: PlaylistItem | AlbumItem;
           </button>
         )}
       </div>
-      <p className="mt-2 truncate px-0.5 text-sm font-semibold text-gray-900 dark:text-gray-100">{item.name}</p>
-      {artistName && <p className="truncate px-0.5 text-[11px] text-gray-500 dark:text-gray-400">{artistName}</p>}
+      <p className="mt-2 truncate px-0.5 text-sm font-semibold text-gray-900 dark:text-gray-100">{album ? <AlbumLink album={album} /> : item.name}</p>
+      {artistName && <p className="truncate px-0.5 text-[11px] text-gray-500 dark:text-gray-400">{album ? <ArtistLinks artists={album.artists?.length ? album.artists : album.artist ? [album.artist] : []} /> : artistName}</p>}
     </div>
   )
 }
@@ -232,6 +234,7 @@ export default function UserPage() {
   }
   const uid = routeUid || cachedUid
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
 
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [bgImg, setBgImg] = useState<string | null>(null)
@@ -498,7 +501,7 @@ export default function UserPage() {
 
         <div className="relative z-10 flex min-h-[330px] flex-col px-6 py-5">
           <div className="flex items-center justify-between">
-            <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1.5 text-sm text-white/75 backdrop-blur-md transition-colors hover:text-white">
+            <button onClick={goBack} className="flex items-center gap-1.5 rounded-full bg-black/20 px-3 py-1.5 text-sm text-white/75 backdrop-blur-md transition-colors hover:text-white">
               <ArrowLeft className="w-4 h-4" /> 返回
             </button>
             {isOwnPage ? (
@@ -746,7 +749,7 @@ export default function UserPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{song.name}</p>
-                      <p className="truncate text-xs text-gray-500">{song.ar?.map(a => a.name).join(' / ') || '未知歌手'}</p>
+                      <p className="truncate text-xs text-gray-500"><SongMetadata song={song} /></p>
                     </div>
                     <Play className="h-4 w-4 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-[#e60026]" />
                   </div>

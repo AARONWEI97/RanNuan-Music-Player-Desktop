@@ -1,5 +1,7 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { SongMetadata } from '@/components/common/MusicLinks'
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { usePlaylistStore, getMusicDetail } from '@shared'
 import { playSong } from '@/services/audioService'
 import { ArrowLeft, Play, Music } from 'lucide-react'
@@ -16,7 +18,7 @@ interface SongMeta {
 
 export default function SongCommentPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const songId = Number(id)
   const [song, setSong] = useState<SongMeta | null>(null)
   const [commentTotal, setCommentTotal] = useState(0)
@@ -56,7 +58,7 @@ export default function SongCommentPage() {
     <div>
       {/* header */}
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+        <button aria-label="返回" onClick={goBack} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-gray-400" />
         </button>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">歌曲评论</h1>
@@ -75,8 +77,7 @@ export default function SongCommentPage() {
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold text-gray-900 dark:text-white truncate">{song.name}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {song.ar?.map(a => a.name).join(' / ') || '未知歌手'}
-              {song.al?.name ? ` · ${song.al.name}` : ''}
+              <SongMetadata song={song} />
             </p>
           </div>
           <button onClick={handlePlay}

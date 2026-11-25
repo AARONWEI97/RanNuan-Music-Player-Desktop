@@ -1,3 +1,4 @@
+import { getSongAlbum, getSongArtists, type MusicEntity } from '@/utils/songMetadata'
 import { showToast } from './toast'
 import { getMusicUrl } from '@shared/api/music'
 import type { SongResult } from '@shared'
@@ -6,11 +7,13 @@ import type { SongResult } from '@shared'
 export type DownloadState = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
 
 export interface SongMeta {
+  artists?: MusicEntity[]
+  albumId?: number
   picUrl?: string
   album?: string
 }
 
-export interface DownloadTask {
+export interface DownloadTask extends SongMeta {
   taskId: string
   songId: number
   songName: string
@@ -164,6 +167,8 @@ export function addDownload(
     createdAt: Date.now(),
     picUrl: meta?.picUrl,
     album: meta?.album,
+    artists: meta?.artists,
+    albumId: meta?.albumId,
   }
   queue.push(task)
   onStateChange?.(id, 'queued')
@@ -192,11 +197,14 @@ export async function queueSongDownload(song: SongResult): Promise<boolean> {
       return false
     }
 
-    const artist = song.ar?.map((item) => item.name).join(' / ') || undefined
-    const album = song.al || song.album
+    const artists = getSongArtists(song)
+    const artist = artists.map(item => item.name).join(' / ') || undefined
+    const album = getSongAlbum(song)
     addDownload(Number(song.id), song.name, url, artist, {
       picUrl: song.picUrl || album?.picUrl,
       album: album?.name,
+      artists,
+      albumId: album?.id,
     })
     showToast('已加入下载队列', song.name)
     return true

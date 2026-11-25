@@ -3,8 +3,10 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts'
+import { usePageScroll } from '@/hooks/usePageScroll'
 import { togglePlay } from '@/services/audioService'
-import { useContextMenu } from '@/hooks/useContextMenu'
+import { useContextMenu, hideContextMenu } from '@/hooks/useContextMenu'
+import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import PlayerBar from './PlayerBar'
 import TitleBar from './TitleBar'
@@ -33,7 +35,10 @@ interface SavedWindowState {
 export default function Layout({ children }: { children: ReactNode }) {
   useGlobalShortcuts()
   const { menu } = useContextMenu()
+  const location = useLocation()
+  useEffect(() => { hideContextMenu() }, [location.key])
   const [isMiniPlayer, setIsMiniPlayer] = useState(false)
+  const { mainRef, contentRef } = usePageScroll(isMiniPlayer)
   const [taskbarDocked, setTaskbarDocked] = useState(false)
   const savedWindowState = useRef<SavedWindowState | null>(null)
 
@@ -221,12 +226,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       <TitleBar />
       <div className="relative z-[1] flex flex-1 overflow-hidden min-h-0">
         <Sidebar />
-        <main className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative">
+        <main ref={mainRef} className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative [scrollbar-gutter:stable]">
           <div className="dog-corner-pet" aria-hidden>
             <span className="dog-corner-glow" />
             <img src="/logo.png" alt="" />
           </div>
-          {children}
+          <div ref={contentRef} className="route-content">{children}</div>
         </main>
       </div>
       <PlaylistDrawer />

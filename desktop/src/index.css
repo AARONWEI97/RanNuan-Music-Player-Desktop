@@ -858,13 +858,15 @@ html.dog-theme .dog-app-shell [class~="from-[#e60026]"] {
   z-index: 1;
 }
 
-.dog-main > .universe-slot {
+.route-content:has(> .universe-slot),
+.route-content > .universe-slot {
   height: 100%;
 }
 
-.dog-main:has(> .universe-slot) {
+.dog-main:has(.route-content > .universe-slot) {
   padding: 12px 12px 16px;
   overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
 .universe-page {

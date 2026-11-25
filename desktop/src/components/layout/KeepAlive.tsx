@@ -1,11 +1,11 @@
-import { useState, createContext, useContext, type ReactNode, lazy, Suspense } from 'react'
-import { useLocation, Routes, Route } from 'react-router-dom'
+import { useState, createContext, useContext, memo, type ReactNode, lazy, Suspense } from 'react'
+import { useLocation, useNavigationType, Routes, Route, matchPath, type Location } from 'react-router-dom'
 
 /**
  * KeepAlive 机制（借鉴 AlgerMusicPlayer 的 Vue keep-alive）
  *
  * 被缓存的页面挂载后永不销毁，切走时 display:none，回来时直接显示。
- * 组件状态、滚动位置、已加载数据全部保留，无需重新请求。
+ * 保留组件状态和已加载数据。主内容滚动位置由 usePageScroll 管理。
  */
 // ─── Lazy imports ───
 const HomePage = lazy(() => import('../../pages/HomePage'))
@@ -25,7 +25,7 @@ const DonationPage = lazy(() => import('../../pages/DonationPage'))
 const PlaylistImportPage = lazy(() => import('../../pages/PlaylistImportPage'))
 const UniversePage = lazy(() => import('../../pages/UniversePage'))
 
-// 非缓存路由（每次重新挂载）
+// 详情路由
 const PlaylistPage = lazy(() => import('../../pages/PlaylistPage'))
 const ArtistPage = lazy(() => import('../../pages/ArtistPage'))
 const AlbumPage = lazy(() => import('../../pages/AlbumPage'))
@@ -40,7 +40,7 @@ const VideoPage = lazy(() => import('../../pages/VideoPage'))
 const CACHED_ROUTES: Array<{
   path: string
   component: React.ComponentType
-  match: 'exact' | 'prefix' | 'regex'
+  match: 'exact' | 'prefix'
   keepMounted?: boolean
 }> = [
   { path: '/', component: HomePage, match: 'exact' },
@@ -60,20 +60,22 @@ const CACHED_ROUTES: Array<{
   { path: '/donation', component: DonationPage, match: 'exact' },
   // 宇宙相册包含独立 iframe + WebGL/R3F 场景，离开页面时卸载 iframe 释放后台动画和 GPU/内存。
   { path: '/universe', component: UniversePage, match: 'exact', keepMounted: false },
-  { path: '^/user/', component: UserPage, match: 'regex' },  // ★ /user/:id 缓存
 ]
 
-// 非缓存路由（每次都重新挂载，保证数据最新）
+// 只缓存最近访问的列表详情。播放器、评论及视频页随路径切换重新挂载。
 const DYNAMIC_ROUTES = [
   { path: '/song/:id/comments', component: SongCommentPage },
-  { path: '/playlist/:id', component: PlaylistPage },
-  { path: '/artist/:id', component: ArtistPage },
-  { path: '/album/:id', component: AlbumPage },
+  { path: '/playlist/:id', component: PlaylistPage, keepRecent: true },
+  { path: '/artist/:id', component: ArtistPage, keepRecent: true },
+  { path: '/album/:id', component: AlbumPage, keepRecent: true },
+  { path: '/user/:id', component: UserPage, keepRecent: true },
   { path: '/dj/:id', component: DjPage },
   { path: '/mv/:id', component: MvPage },
   { path: '/video/:id', component: VideoPage },
   { path: '/song/:id', component: SongDetailPage },
 ]
+
+const MAX_RECENT_DETAILS = 5
 
 // ─── Context: 告知子组件当前是否活跃 ───
 const KeepAliveContext = createContext(true)
@@ -104,31 +106,28 @@ export function TabCache({ active, children }: { active: boolean; children: Reac
 
 // ─── 占位 ───
 const PageFallback = () => (
-  <div className="flex items-center justify-center py-20">
-    <div className="w-6 h-6 border-2 border-[#e60026] border-t-transparent rounded-full animate-spin" />
+  <div role="status" aria-label="正在打开页面" className="flex items-center justify-center gap-3 py-20 text-sm text-gray-500 dark:text-gray-400">
+    <div aria-hidden="true" className="w-6 h-6 border-2 border-[#e60026] border-t-transparent rounded-full animate-spin" />
+    正在打开页面…
   </div>
 )
 
 // ─── 缓存槽：首次激活后挂载，之后只切换 display ───
-function CachedSlot({
-  cacheKey,
-  match,
+const CachedPage = memo(function CachedPage({ component: Component }: { component: React.ComponentType }) {
+  return <Suspense fallback={<PageFallback />}><Component /></Suspense>
+})
+
+const CachedSlot = memo(function CachedSlot({
+  path,
+  isActive,
   keepMounted = true,
-  children
+  component,
 }: {
-  cacheKey: string
-  match: 'exact' | 'prefix' | 'regex'
+  path: string
+  isActive: boolean
   keepMounted?: boolean
-  children: ReactNode
+  component: React.ComponentType
 }) {
-  const location = useLocation()
-  let isActive = false
-  if (match === 'exact') isActive = location.pathname === cacheKey
-  else if (match === 'prefix') isActive = location.pathname.startsWith(cacheKey)
-  else if (match === 'regex') {
-    // cacheKey is a regex pattern like "^/user/"
-    isActive = new RegExp(cacheKey).test(location.pathname)
-  }
   const [everMounted, setEverMounted] = useState(isActive)
   if (isActive && !everMounted) {
     setEverMounted(true)
@@ -139,45 +138,63 @@ function CachedSlot({
   return (
     <KeepAliveContext.Provider value={isActive}>
       <div
-        className={cacheKey === '/universe' ? 'universe-slot' : undefined}
+        className={path === '/universe' ? 'universe-slot' : undefined}
         style={{ display: isActive ? undefined : 'none' }}
       >
-        {children}
+        <CachedPage component={component} />
       </div>
     </KeepAliveContext.Provider>
   )
-}
+})
 
 // ─── 主组件 ───
 export function KeepAliveRoutes() {
   const location = useLocation()
 
-  // 当前路径是否命中缓存路由
-  const cachedMatch = CACHED_ROUTES.find((r) => {
-    if (r.match === 'exact') return location.pathname === r.path
-    if (r.match === 'regex') return new RegExp(r.path).test(location.pathname)
-    return location.pathname.startsWith(r.path)
-  })
+  const fixed = CACHED_ROUTES.find(({ path, match }) => location.pathname === path ||
+    (match === 'prefix' && location.pathname.startsWith(`${path}/`)))
+  const detail = fixed ? undefined : DYNAMIC_ROUTES.find(route => matchPath(route.path, location.pathname))
+  const navigationType = useNavigationType()
+  const [cache, setCache] = useState<{ location: Location; recent: { slot: string; location: Location }[] }>(
+    () => ({ location, recent: detail?.keepRecent ? [{ slot: location.key, location }] : [] }),
+  )
+  if (cache.location !== location) {
+    let recent = cache.recent
+    if (detail?.keepRecent) {
+      const replaceInPlace = navigationType === 'REPLACE' && cache.location.pathname === location.pathname
+      const previousKey = replaceInPlace ? cache.location.key : location.key
+      const slot = recent.find(entry => entry.location.key === previousKey)?.slot ?? location.key
+      recent = [{ slot, location }, ...recent.filter(entry => entry.slot !== slot)].slice(0, MAX_RECENT_DETAILS)
+    } else if (navigationType === 'REPLACE') {
+      recent = recent.filter(entry => entry.location.key !== cache.location.key)
+    }
+    setCache({ location, recent })
+  }
 
   return (
     <>
       {/* 缓存页面：永不销毁，切换 display */}
-      {CACHED_ROUTES.map(({ path, component: Comp, match, keepMounted }) => (
-        <CachedSlot key={path} cacheKey={path} match={match} keepMounted={keepMounted}>
-          <Suspense fallback={<PageFallback />}>
-            <Comp />
-          </Suspense>
-        </CachedSlot>
+      {CACHED_ROUTES.map(({ path, component, keepMounted }) => (
+        <CachedSlot key={path} path={path} isActive={fixed?.path === path} component={component} keepMounted={keepMounted} />
       ))}
 
-      {/* 动态页面：普通 Routes，每次重新挂载 */}
-      <div style={{ display: cachedMatch ? 'none' : undefined }}>
-        <Routes>
-          {DYNAMIC_ROUTES.map(({ path, component: Comp }) => (
-            <Route key={path} path={path} element={<Suspense fallback={<PageFallback />}><Comp /></Suspense>} />
-          ))}
-        </Routes>
-      </div>
+      {/* Hidden entries retain their own params, query and list pagination. */}
+      {cache.recent.map(entry => (
+        <div key={entry.slot} hidden={entry.location.key !== location.key}>
+          <DetailRoute location={entry.location} />
+        </div>
+      ))}
+      {detail && !detail.keepRecent && <DetailRoute key={location.pathname} location={location} />}
     </>
+  )
+}
+
+function DetailRoute({ location }: { location: Location }) {
+  return (
+    <Routes location={location}>
+      {DYNAMIC_ROUTES.map(({ path, component: Comp }) => (
+        <Route key={path} path={path} element={<Suspense fallback={<PageFallback />}><Comp /></Suspense>} />
+      ))}
+    </Routes>
   )
 }

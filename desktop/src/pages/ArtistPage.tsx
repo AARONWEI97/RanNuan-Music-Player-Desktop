@@ -1,3 +1,5 @@
+import { useBackNavigation } from '@/hooks/useBackNavigation'
+import { ArtistLinks } from '@/components/common/MusicLinks'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import {
@@ -24,11 +26,9 @@ import { TabCache } from '@/components/layout/KeepAlive'
 import { useAuthStore } from '@/store/authStore'
 import { showToast } from '@/utils/toast'
 import { getCache, setCache } from '@/utils/indexedDB'
-import { showContextMenu } from '@/hooks/useContextMenu'
-import { isFavorite, toggleFavorite } from '@/store/favoritesStore'
 import { playSong } from '@/services/audioService'
 import {
-  ArrowLeft, Play, ListPlus, Heart, Download, User, Disc, Music,
+  ArrowLeft, Play, Music, Disc,
   UserPlus, UserCheck, Film, Users, Loader, AlertCircle, RefreshCw,
 } from 'lucide-react'
 
@@ -56,15 +56,11 @@ function mapSong(song: any): SongResult {
 /** 热门歌曲 tab — 只在 active 时挂载 */
 function HotSongsTab({
   hotSongs,
-  handlePlayOne, handlePlayAll, handleAddToNext, handleToggleFav,
-  onNavigate,
+  handlePlayOne, handlePlayAll,
 }: {
-  artistId: string | undefined, hotSongs: SongResult[],
+  hotSongs: SongResult[],
   handlePlayOne: (s: SongResult, i: number, list: SongResult[]) => void,
   handlePlayAll: (list: SongResult[]) => void,
-  handleAddToNext: (s: SongResult) => void,
-  handleToggleFav: (s: SongResult) => void,
-  onNavigate: (path: string) => void,
 }) {
   const [expanded, setExpanded] = useState(false)
   const toShow = expanded ? hotSongs : hotSongs.slice(0, 20)
@@ -84,29 +80,6 @@ function HotSongsTab({
         {toShow.map((song, idx) => (
           <SongRow key={String(song.id)} song={song} index={idx}
             onPlay={() => handlePlayOne(song, idx, hotSongs)}
-            isFavorite={isFavorite(song.id)}
-            onAddToNext={() => handleAddToNext(song)}
-            onToggleFavorite={() => handleToggleFav(song)}
-            onMore={(e: React.MouseEvent) => {
-              const fav = isFavorite(song.id)
-              showContextMenu(e.clientX, e.clientY, [
-                { label: '播放', icon: <Play className="w-4 h-4" />, onClick: () => handlePlayOne(song, idx, hotSongs) },
-                { label: '下一首播放', icon: <ListPlus className="w-4 h-4" />, onClick: () => handleAddToNext(song) },
-                { label: fav ? '取消收藏' : '收藏', icon: <Heart className={`w-4 h-4 ${fav ? 'text-[#e60026]' : ''}`} />, onClick: () => handleToggleFav(song) },
-                { label: '', divider: true, onClick: () => {} },
-                { label: '歌手', icon: <User className="w-4 h-4" />, onClick: () => song.ar?.[0]?.id && onNavigate(`/artist/${song.ar[0].id}`) },
-                { label: '专辑', icon: <Disc className="w-4 h-4" />, onClick: () => song.al?.id && onNavigate(`/album/${song.al.id}`) },
-                { label: '', divider: true, onClick: () => {} },
-                { label: '下载', icon: <Download className="w-4 h-4" />, onClick: () => {
-                  if (song.playMusicUrl) {
-                    const artistName = song.ar?.map((a: any) => a.name).join(' / ') || undefined
-                    const meta = { picUrl: song.al?.picUrl, album: song.al?.name }
-                    import('@/utils/download').then(m => m.downloadSong(song.id as number, song.name, song.playMusicUrl!, artistName, meta))
-                  }
-                  else showToast('请先播放歌曲', '播放后获取下载链接')
-                }},
-              ])
-            }}
           />
         ))}
       </div>
@@ -122,15 +95,11 @@ function HotSongsTab({
 /** 全部歌曲 tab — 分页 + 渐进渲染 + 无限滚动 */
 function AllSongsTab({
   artistId,
-  handlePlayOne, handlePlayAll, handleAddToNext, handleToggleFav,
-  onNavigate,
+  handlePlayOne, handlePlayAll,
 }: {
   artistId: number,
   handlePlayOne: (s: SongResult, i: number, list: SongResult[]) => void,
   handlePlayAll: (list: SongResult[]) => void,
-  handleAddToNext: (s: SongResult) => void,
-  handleToggleFav: (s: SongResult) => void,
-  onNavigate: (path: string) => void,
 }) {
   const [order, setOrder] = useState<'hot' | 'time'>('time')
 
@@ -174,29 +143,6 @@ function AllSongsTab({
             {renderedItems.map((song, idx) => (
               <SongRow key={String(song.id)} song={song} index={idx}
                 onPlay={() => handlePlayOne(song, idx, list.items)}
-                isFavorite={isFavorite(song.id)}
-                onAddToNext={() => handleAddToNext(song)}
-                onToggleFavorite={() => handleToggleFav(song)}
-                onMore={(e: React.MouseEvent) => {
-                  const fav = isFavorite(song.id)
-                  showContextMenu(e.clientX, e.clientY, [
-                    { label: '播放', icon: <Play className="w-4 h-4" />, onClick: () => handlePlayOne(song, idx, list.items) },
-                    { label: '下一首播放', icon: <ListPlus className="w-4 h-4" />, onClick: () => handleAddToNext(song) },
-                    { label: fav ? '取消收藏' : '收藏', icon: <Heart className={`w-4 h-4 ${fav ? 'text-[#e60026]' : ''}`} />, onClick: () => handleToggleFav(song) },
-                    { label: '', divider: true, onClick: () => {} },
-                    { label: '歌手', icon: <User className="w-4 h-4" />, onClick: () => song.ar?.[0]?.id && onNavigate(`/artist/${song.ar[0].id}`) },
-                    { label: '专辑', icon: <Disc className="w-4 h-4" />, onClick: () => song.al?.id && onNavigate(`/album/${song.al.id}`) },
-                    { label: '', divider: true, onClick: () => {} },
-                    { label: '下载', icon: <Download className="w-4 h-4" />, onClick: () => {
-                      if (song.playMusicUrl) {
-                        const artistName = song.ar?.map((a: any) => a.name).join(' / ') || undefined
-                        const meta = { picUrl: song.al?.picUrl, album: song.al?.name }
-                        import('@/utils/download').then(m => m.downloadSong(song.id as number, song.name, song.playMusicUrl!, artistName, meta))
-                      }
-                      else showToast('请先播放歌曲', '播放后获取下载链接')
-                    }},
-                  ])
-                }}
               />
             ))}
           </div>
@@ -291,7 +237,7 @@ function MvTab({ artistId }: { artistId: number }) {
                 <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"><Play className="w-6 h-6 text-white ml-0.5" /></div>
               </div>
             </div>
-            <div className="p-3"><p className="text-sm font-medium truncate">{item.name}</p>{item.artistName && <p className="text-xs text-gray-500 truncate mt-0.5">{item.artistName}</p>}</div>
+            <div className="p-3"><p className="text-sm font-medium truncate">{item.name}</p>{item.artistName && <p className="text-xs text-gray-500 truncate mt-0.5"><ArtistLinks artists={item.artists?.length ? item.artists : [{ id: item.artistId, name: item.artistName }]} /></p>}</div>
           </div>
         ))}
       </div>
@@ -316,13 +262,13 @@ const TABS: { key: ArtistTabType; label: string; icon: React.ElementType }[] = [
 export default function ArtistPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const goBack = useBackNavigation()
   const location = useLocation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
 
   // ★ 只订阅 action，不订阅 state — 播放状态变化不会触发重渲染
   const setPlayList = usePlaylistStore((s) => s.setPlayList)
   const setPlayListIndex = usePlaylistStore((s) => s.setPlayListIndex)
-  const addToNextPlay = usePlaylistStore((s) => s.addToNextPlay)
 
   const artistId = Number(id) || 0
 
@@ -337,16 +283,13 @@ export default function ArtistPage() {
   const [followLoading, setFollowLoading] = useState(false)
 
   const queryTab = new URLSearchParams(location.search).get('tab')
-  const initialTab: ArtistTabType = queryTab === 'all' || queryTab === 'album' || queryTab === 'mv'
+  const activeTab: ArtistTabType = queryTab === 'all' || queryTab === 'album' || queryTab === 'mv'
     ? queryTab
     : 'hot'
-  const [activeTab, setActiveTab] = useState<ArtistTabType>(initialTab)
-
-  // 专辑详情页返回时携带当前 Tab，避免动态路由重新挂载后回到“热门”。
-  const navigateFromArtist = useCallback((path: string) => {
-    const returnTo = `${location.pathname}?tab=${activeTab}`
-    navigate(path, { state: { returnTo } })
-  }, [activeTab, location.pathname, navigate])
+  const setActiveTab = (tab: ArtistTabType) => {
+    if (tab === activeTab) return
+    navigate({ pathname: location.pathname, search: tab === 'hot' ? '' : `?tab=${tab}` }, { replace: true })
+  }
 
   // Hot songs — 加载一次，不参与分页
   const [hotSongs, setHotSongs] = useState<SongResult[]>([])
@@ -365,11 +308,17 @@ export default function ArtistPage() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
+    let loaded = false
+    let cachedArtist = false
+    setLoading(true)
+    setError(false)
 
     // 缓存先行
     getCache<{ artist: any; hotSongs: SongResult[]; desc: string; similarArtists: any[]; followed: boolean }>('artist', `artist-${id}`).then((cached) => {
-      if (cancelled || !cached) return
-      if (cached.artist) setArtist(cached.artist)
+      if (cancelled || loaded || !cached?.artist) return
+      cachedArtist = true
+      setArtist(cached.artist)
+      setError(false)
       if (cached.hotSongs) setHotSongs(cached.hotSongs)
       if (cached.desc) setDesc(cached.desc)
       if (cached.similarArtists) setSimilarArtists(cached.similarArtists)
@@ -377,38 +326,36 @@ export default function ArtistPage() {
       setLoading(false)
     }).catch(() => {})
 
-    Promise.resolve().then(() => {
-      if (cancelled) return
-      setLoading(true); setError(false)
-    })
-
     Promise.all([
       getArtistDetail(Number(id)),
       getArtistTopSongs({ id: Number(id), limit: 50 }),
     ]).then(([detailRes, songsRes]) => {
       if (cancelled) return
       const artistData = detailRes?.data?.data?.artist
-      let currentArtist: ArtistInfo | null = null
-      if (artistData) {
-        currentArtist = {
-          cover: artistData.cover || artistData.picUrl || artistData.avatar || '',
-          avatar: artistData.avatar || artistData.picUrl || artistData.cover || '',
-          name: artistData.name || '',
-          briefDesc: artistData.briefDesc || '',
-          albumSize: artistData.albumSize || 0,
-          musicSize: artistData.musicSize || 0,
-          mvSize: artistData.mvSize || 0,
-          alias: (artistData.alias || []).map((a: any) => (typeof a === 'string' ? a : a?.txt || a?.ti || '')),
-          followed: !!artistData.followed,
-        }
-        setArtist(currentArtist)
-        setFollowed(!!artistData.followed)
+      if (!artistData) throw new Error('歌手不存在')
+      loaded = true
+      const currentArtist: ArtistInfo = {
+        cover: artistData.cover || artistData.picUrl || artistData.avatar || '',
+        avatar: artistData.avatar || artistData.picUrl || artistData.cover || '',
+        name: artistData.name || '',
+        briefDesc: artistData.briefDesc || '',
+        albumSize: artistData.albumSize || 0,
+        musicSize: artistData.musicSize || 0,
+        mvSize: artistData.mvSize || 0,
+        alias: (artistData.alias || []).map((a: any) => (typeof a === 'string' ? a : a?.txt || a?.ti || '')),
+        followed: !!artistData.followed,
       }
+      setArtist(currentArtist)
+      setFollowed(!!artistData.followed)
       const songsData = songsRes?.data?.songs
       let currentSongs: SongResult[] = []
       if (Array.isArray(songsData)) { currentSongs = songsData.map(mapSong); setHotSongs(currentSongs) }
 
-      // ★ 背景数据：放同一个 finally 写入，用 setTimeout 延迟触发避免连续 setState
+      setLoading(false)
+
+      let nextDesc = ''
+      let nextSimilar: typeof similarArtists = []
+      // Supplementary data should not delay the hero or track list.
       const backgroundFetches = Promise.allSettled([
         getArtistFollowCount(Number(id)).then((res) => {
           if (cancelled) return
@@ -422,27 +369,30 @@ export default function ArtistPage() {
           if (Array.isArray(intro)) txt = intro.map((s: any) => (typeof s === 'string' ? s : s?.txt || '')).filter(Boolean).join('\n\n')
           else if (typeof intro === 'string') txt = intro
           if (!txt) txt = (typeof d?.briefDesc === 'string' ? d.briefDesc : '') || ''
-          if (txt) setDesc(txt.trim())
+          nextDesc = txt.trim()
+          setDesc(nextDesc)
         }).catch(() => {}),
         getSimiArtist(Number(id)).then((res) => {
           if (cancelled) return
           const data = res?.data?.artists
-          if (Array.isArray(data)) setSimilarArtists(data.slice(0, 8))
+          if (Array.isArray(data)) {
+            nextSimilar = data.slice(0, 8)
+            setSimilarArtists(nextSimilar)
+          }
         }).catch(() => {}),
       ])
 
       backgroundFetches.finally(() => {
-        setTimeout(() => {
-          if (cancelled) return
-          setCache('artist', `artist-${id}`, {
-            artist: currentArtist, hotSongs: currentSongs, desc: desc || '',
-            similarArtists: similarArtists || [], followed: !!artistData?.followed,
-          }, 5).catch(() => {})
-          setLoading(false)
-        }, 300)
+        if (cancelled) return
+        setCache('artist', `artist-${id}`, {
+          artist: currentArtist, hotSongs: currentSongs, desc: nextDesc,
+          similarArtists: nextSimilar, followed: !!artistData.followed,
+        }, 5).catch(() => {})
       })
     }).catch(() => {
-      if (!cancelled) setError(true)
+      if (cancelled) return
+      setError(!cachedArtist)
+      setLoading(false)
     })
 
     return () => { cancelled = true }
@@ -470,13 +420,6 @@ export default function ArtistPage() {
   const handlePlayOne = useCallback((song: SongResult, idx: number, songList: SongResult[]) => {
     setPlayList(songList); setPlayListIndex(idx); playSong(song)
   }, [setPlayList, setPlayListIndex])
-
-  const handleAddToNext = useCallback((song: SongResult) => { addToNextPlay(song) }, [addToNextPlay])
-
-  const handleToggleFav = useCallback((song: SongResult) => {
-    const added = toggleFavorite(song)
-    showToast(added ? '已收藏' : '已取消收藏', song.name)
-  }, [])
 
   // ─── Render ───
   if (loading) return (
@@ -508,7 +451,7 @@ export default function ArtistPage() {
           <div className="w-full h-56 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800" />
         )}
         <div className="absolute inset-0" style={{ background: `linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 40%, ${primaryColor}33 100%)` }} />
-        <button onClick={() => navigate(-1)}
+        <button aria-label="返回" onClick={goBack}
           className="absolute top-4 left-4 p-2 rounded-full bg-black/30 hover:bg-black/60 text-white transition-colors backdrop-blur-sm">
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -571,19 +514,15 @@ export default function ArtistPage() {
 
       {/* ─── Tab Content — Tab 级 KeepAlive，切 tab 不销毁组件 ─── */}
       <TabCache active={activeTab === 'hot'}>
-        <HotSongsTab artistId={id} hotSongs={hotSongs}
-          handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll}
-          handleAddToNext={handleAddToNext} handleToggleFav={handleToggleFav}
-          onNavigate={navigateFromArtist} />
+        <HotSongsTab hotSongs={hotSongs}
+          handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll} />
       </TabCache>
       <TabCache active={activeTab === 'all'}>
         <AllSongsTab artistId={artistId}
-          handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll}
-          handleAddToNext={handleAddToNext} handleToggleFav={handleToggleFav}
-          onNavigate={navigateFromArtist} />
+          handlePlayOne={handlePlayOne} handlePlayAll={handlePlayAll} />
       </TabCache>
       <TabCache active={activeTab === 'album'}>
-        <AlbumTab artistId={artistId} onNavigate={navigateFromArtist} />
+        <AlbumTab artistId={artistId} onNavigate={navigate} />
       </TabCache>
       <TabCache active={activeTab === 'mv'}>
         <MvTab artistId={artistId} />
