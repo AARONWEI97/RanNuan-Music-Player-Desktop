@@ -1,14 +1,18 @@
 import { useState, useCallback } from 'react'
 import { Minus, Square, X, Maximize2, Bone, PawPrint, Heart } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@shared'
+import { useDesktopPreferences } from '@/store/desktopPreferences'
+import { saveSession } from '@/services/sessionManager'
+import { showToast } from '@/utils/toast'
 import pkg from '../../../package.json'
 
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false)
   const appWindow = isTauri() ? getCurrentWindow() : null
   const theme = useSettingsStore((s) => s.theme)
+  const closeAction = useDesktopPreferences((s) => s.closeAction)
   const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
 
   const handleMinimize = useCallback(() => {
@@ -27,10 +31,18 @@ export default function TitleBar() {
     }
   }, [appWindow])
 
-  // ★ 关闭 → 最小化到托盘（类似 QQ音乐/网易云行为）
-  const handleClose = useCallback(() => {
-    appWindow?.hide()
-  }, [appWindow])
+  const handleClose = useCallback(async () => {
+    try {
+      if (closeAction === 'quit') {
+        saveSession()
+        await invoke('quit_app')
+      } else {
+        await appWindow?.hide()
+      }
+    } catch {
+      showToast('关闭窗口失败')
+    }
+  }, [appWindow, closeAction])
 
   return (
     <div
@@ -100,7 +112,7 @@ export default function TitleBar() {
         </button>
         <button
           onClick={handleClose}
-          title="最小化到托盘"
+          title={closeAction === 'quit' ? '退出应用' : '最小化到托盘'}
           className="dog-win-btn dog-win-close h-full w-11 flex items-center justify-center text-gray-400 hover:bg-red-500 hover:text-white transition-colors"
           data-tauri-drag-region="false"
         >

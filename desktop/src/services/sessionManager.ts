@@ -119,7 +119,7 @@ if (typeof window !== 'undefined') {
  * 恢复播放会话 — 在 App.tsx 启动时调用
  * 返回 true 表示成功恢复了会话
  */
-export async function restoreSession(): Promise<boolean> {
+export async function restoreSession(resumePlayback = false): Promise<boolean> {
   const session = loadSession()
   if (!session) {
     console.log('[Session] 无保存的会话')
@@ -187,10 +187,9 @@ export async function restoreSession(): Promise<boolean> {
   currentSong['expiredAt'] = undefined
   usePlayerStore.getState().setPlayMusicUrl('')
 
-  // ★ 调用 playSong 完成 URL 解析 + 设置 audio.src，但不自动播放
+  // 从保存的位置准备音频，根据桌面偏好继续播放。
   const { playSong } = await import('./audioService')
-  await playSong(currentSong, false) // autoPlay=false → 只设置 src，不播放
+  await playSong(currentSong, resumePlayback, session.currentProgress)
 
-  console.log('[Session] ✅ 会话恢复完成（已暂停，src 已就绪，点击播放即可）')
   return true
 }

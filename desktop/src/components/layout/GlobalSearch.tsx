@@ -4,6 +4,7 @@ import type { SongResult } from '@shared'
 import { playSong } from '@/services/audioService'
 import { Search, X } from 'lucide-react'
 import SongRow from '@/components/common/SongRow'
+import { readSearchShortcut, useDesktopPreferences } from '@/store/desktopPreferences'
 
 export default function GlobalSearch() {
   const [show, setShow] = useState(false)
@@ -13,18 +14,19 @@ export default function GlobalSearch() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
       if (e.key === 'Escape' && show) {
         setShow(false)
         return
       }
-      // Ctrl+Shift+S → toggle global search (key is uppercase 'S' when shift pressed)
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+      const shortcut = readSearchShortcut(e)
+      const { openSearchShortcut, toggleSearchShortcut } = useDesktopPreferences.getState()
+      if (shortcut === toggleSearchShortcut) {
         e.preventDefault()
-        setShow(prev => !prev)
+        if (!e.repeat) setShow(prev => !prev)
         return
       }
-      // Ctrl+K → open global search
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if (shortcut === openSearchShortcut) {
         e.preventDefault()
         setShow(true)
       }

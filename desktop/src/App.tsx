@@ -1,22 +1,25 @@
 import { useEffect, useState, useCallback } from 'react'
 import AppRouter from './components/layout/AppRouter'
-import { useSettingsStore, setApiBaseUrl } from '@shared'
+import { usePlayerStore, useSettingsStore, setApiBaseUrl } from '@shared'
 import { useAuthStore } from '@/store/authStore'
 import Layout from './components/layout/Layout'
 import { KeepAliveRoutes } from './components/layout/KeepAlive'
 import StartupModals from './components/common/StartupModals'
 import { restoreSession } from '@/services/sessionManager'
 import { useTrayEvents } from '@/hooks/useTrayEvents'
+import { useSystemDark } from '@/hooks/useSystemDark'
+import { useDesktopPreferences } from '@/store/desktopPreferences'
 import { startPlayerBridge } from '@/services/playerBridge'
 import SplashScreen from './components/common/SplashScreen'
 
 function App() {
   const theme = useSettingsStore((s) => s.theme)
+  const systemDark = useSystemDark()
   const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl)
   const checkLoginStatus = useAuthStore((s) => s.checkLoginStatus)
 
   // ★ 启动动画
-  const [showSplash, setShowSplash] = useState(true)
+  const [showSplash, setShowSplash] = useState(() => useDesktopPreferences.getState().showSplash)
   const handleSplashFinish = useCallback(() => setShowSplash(false), [])
 
   // ★ 托盘菜单事件监听（播放/暂停、上/下一首）
@@ -43,17 +46,10 @@ function App() {
 
   // ★ 启动时恢复上次播放会话（在 splash 期间后台执行）
   useEffect(() => {
-    let retries = 0
-    const maxRetries = 5
-    const tryRestore = () => {
-      restoreSession().then((ok) => {
-        if (!ok && retries < maxRetries) {
-          retries++
-          setTimeout(tryRestore, 500)
-        }
-      })
-    }
-    const timer = setTimeout(tryRestore, 300)
+    const timer = setTimeout(() => {
+      const { isPlay, isLoading } = usePlayerStore.getState()
+      if (!isPlay && !isLoading) void restoreSession(useDesktopPreferences.getState().resumePlayback)
+    }, 300)
     return () => clearTimeout(timer)
   }, [])
 
@@ -61,11 +57,11 @@ function App() {
     const root = document.documentElement
     const dogSkin = theme === 'dog-light' || theme === 'dog-dark'
     const darkTheme = theme === 'dark' || theme === 'dog-dark' ||
-      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      (theme === 'system' && systemDark)
     root.classList.toggle('dark', darkTheme)
     root.classList.toggle('dog-theme', dogSkin)
     root.dataset.theme = theme
-  }, [theme])
+  }, [theme, systemDark])
 
   return (
     <AppRouter>

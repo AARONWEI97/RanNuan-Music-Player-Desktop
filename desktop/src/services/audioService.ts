@@ -1,6 +1,7 @@
 import { usePlayerStore, usePlaylistStore, useSettingsStore, parseMusicUrl, parseLyric, type SongResult, getMusicLrc, musicParser, AVAILABLE_SOURCES } from '@shared';
 import { recordSuccessfulPlay } from '@/store/historyStore';
 import { showToast } from '@/utils/toast';
+import { loadLocalFile } from '@/utils/indexedDB';
 import { saveSession } from './sessionManager';
 
 const KNOWN_SOURCE_KEYS = new Set<string>(AVAILABLE_SOURCES.map((s) => s.key));
@@ -59,6 +60,7 @@ async function notifyTray(song: import('@shared').SongResult | null) {
 
 // ==================== Audio Singleton ====================
 let audio: HTMLAudioElement | null = null;
+const restoredLocalUrls = new WeakMap<HTMLAudioElement, string>();
 let audioListenersController: AbortController | null = null;
 let progressInterval: number | null = null;
 let moduleDisposed = false;
@@ -104,6 +106,11 @@ function destroyAudioElement(target: HTMLAudioElement) {
     target.removeAttribute('src')
     target.load()
   } catch { /* ignore */ }
+  const localUrl = restoredLocalUrls.get(target)
+  if (localUrl) {
+    URL.revokeObjectURL(localUrl)
+    restoredLocalUrls.delete(target)
+  }
 }
 
 /** 解绑监听后再释放实例，主动清 src 产生的事件不会污染下一首歌。 */
@@ -367,7 +374,7 @@ function setupAudioListeners(target: HTMLAudioElement) {
 
 // ==================== Core: playSong with generation-based cancellation ====================
 
-export async function playSong(song: SongResult, autoPlay = true) {
+export async function playSong(song: SongResult, autoPlay = true, startAtMs = 0) {
   if (moduleDisposed) return
 
   const player = usePlayerStore.getState();
@@ -403,6 +410,7 @@ export async function playSong(song: SongResult, autoPlay = true) {
       const a = getAudio();
       operationAudio = a
       a.src = url;
+      if (startAtMs > 0) a.currentTime = startAtMs / 1000;
       a.volume = player.isMuted ? 0 : player.volume;
       a.playbackRate = player.playbackRate;
 
@@ -442,7 +450,18 @@ export async function playSong(song: SongResult, autoPlay = true) {
     let url = song.playMusicUrl;
     const localPlayback = isLocalPlayback(song, url)
     const hasKnownSource = !!(song.musicSource && KNOWN_SOURCE_KEYS.has(song.musicSource));
-    if (!url || (!localPlayback && !hasKnownSource)) {
+    let restoreLocalUrl = false
+    if (localPlayback) {
+      player.setActiveSource(null)
+      if (!url && String(song.id).startsWith('local-')) {
+        const data = await loadLocalFile(String(song.id))
+        if (!isCurrentGeneration(thisGeneration)) return
+        if (data) {
+          url = URL.createObjectURL(new Blob([data]))
+          restoreLocalUrl = true
+        }
+      }
+    } else if (!url || !hasKnownSource) {
       const parsed = await parseMusicUrl(song.id, song, musicQuality);
       if (parsed) {
         url = parsed.url;
@@ -451,8 +470,6 @@ export async function playSong(song: SongResult, autoPlay = true) {
         // 解析失败但旧 URL 仍可用，至少清空无效勾选状态
         applyActiveSource(song, song.musicSource);
       }
-    } else if (localPlayback) {
-      player.setActiveSource(null)
     } else {
       applyActiveSource(song, song.musicSource);
     }
@@ -464,13 +481,15 @@ export async function playSong(song: SongResult, autoPlay = true) {
     }
 
     if (url) {
-      song.playMusicUrl = url;
+      if (!restoreLocalUrl) song.playMusicUrl = url;
       // 同步解析命中的音源到 player store，供音源选择器打勾
       player.setPlayMusic({ ...song });
       player.setPlayMusicUrl(url);
       const a = getAudio();
       operationAudio = a
+      if (restoreLocalUrl) restoredLocalUrls.set(a, url)
       a.src = url;
+      if (startAtMs > 0) a.currentTime = startAtMs / 1000;
       a.volume = player.isMuted ? 0 : player.volume;
       a.playbackRate = player.playbackRate;
 

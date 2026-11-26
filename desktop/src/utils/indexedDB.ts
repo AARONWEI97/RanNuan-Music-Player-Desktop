@@ -1,5 +1,8 @@
+import { useSettingsStore } from '@shared'
+
 const DB_NAME = 'RanNuanMusicDB'
 const DB_VERSION = 2
+const PAGE_CACHE_STORES = ['homepage', 'artist']
 let dbPromise: Promise<IDBDatabase> | null = null
 
 interface CacheEntry<T> {
@@ -25,7 +28,10 @@ function openDB(): Promise<IDBDatabase> {
       }
     }
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error)
+    }
   })
   return dbPromise
 }
@@ -71,7 +77,9 @@ export async function setCache<T>(
   data: T,
   ttlMinutes = 5
 ): Promise<void> {
+  if (!useSettingsStore.getState().enableCache) return
   const db = await openDB()
+  if (!useSettingsStore.getState().enableCache) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite')
     const store = tx.objectStore(storeName)
@@ -91,6 +99,7 @@ export async function getCache<T>(
   storeName: string,
   key: string | number
 ): Promise<T | null> {
+  if (!useSettingsStore.getState().enableCache) return null
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readonly')
@@ -98,13 +107,44 @@ export async function getCache<T>(
     const req = store.get(key)
     req.onsuccess = () => {
       const entry = req.result as CacheEntry<T> | undefined
-      if (entry && Date.now() < entry.timestamp) {
+      if (entry && Date.now() < entry.timestamp && useSettingsStore.getState().enableCache) {
         resolve(entry.data)
       } else {
         resolve(null)
       }
     }
     req.onerror = () => reject(req.error)
+  })
+}
+
+export async function getPageCacheStats(): Promise<{ entries: number; bytes: number }> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PAGE_CACHE_STORES, 'readonly')
+    const encoder = new TextEncoder()
+    const stats = { entries: 0, bytes: 0 }
+    tx.oncomplete = () => resolve(stats)
+    tx.onabort = () => reject(tx.error)
+    for (const storeName of PAGE_CACHE_STORES) {
+      const request = tx.objectStore(storeName).openCursor()
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return
+        stats.entries++
+        stats.bytes += encoder.encode(JSON.stringify(cursor.value)).byteLength
+        cursor.continue()
+      }
+    }
+  })
+}
+
+export async function clearPageCache(): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PAGE_CACHE_STORES, 'readwrite')
+    tx.oncomplete = () => resolve()
+    tx.onabort = () => reject(tx.error)
+    for (const storeName of PAGE_CACHE_STORES) tx.objectStore(storeName).clear()
   })
 }
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts'
 import { usePageScroll } from '@/hooks/usePageScroll'
@@ -19,6 +19,7 @@ import ContextMenu from '@/components/common/ContextMenu'
 import AddToPlaylistModal from '@/components/common/AddToPlaylistModal'
 import DownloadProgressToast from '@/components/common/DownloadProgressToast'
 import { showToast } from '@/utils/toast'
+import { useDesktopPreferences } from '@/store/desktopPreferences'
 
 const MINI_WIDTH = 360
 const MINI_HEIGHT = 72
@@ -67,7 +68,9 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      const interactive = e.target instanceof Element &&
+        e.target.closest('input, textarea, select, button, a[href], [contenteditable="true"], [role="button"]')
+      if (!e.defaultPrevented && e.code === 'Space' && !interactive) {
         e.preventDefault()
         togglePlay()
       }
@@ -173,9 +176,9 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   // Windows 把迷你播放条嵌进任务栏；其他系统或初始化失败时回退成缩小主窗口。
   const toggleMini = useCallback(async () => {
-    if (isTauri()) {
+    const preferTaskbar = useDesktopPreferences.getState().miniPlayerMode === 'automatic'
+    if (isTauri() && (taskbarDocked || (!isMiniPlayer && preferTaskbar))) {
       try {
-        const { invoke } = await import('@tauri-apps/api/core')
         await invoke<boolean>('toggle_taskbar_mini')
         return
       } catch (err) {
@@ -187,7 +190,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     }
     if (isMiniPlayer) await exitMiniMode()
     else await enterMiniMode()
-  }, [isMiniPlayer, enterMiniMode, exitMiniMode])
+  }, [isMiniPlayer, taskbarDocked, enterMiniMode, exitMiniMode])
 
   // 迷你模式下播放列表展开/收起时调整窗口高度
   const handlePlaylistToggle = useCallback(async (open: boolean) => {
@@ -226,7 +229,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       <TitleBar />
       <div className="relative z-[1] flex flex-1 overflow-hidden min-h-0">
         <Sidebar />
-        <main ref={mainRef} className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative [scrollbar-gutter:stable]">
+        <main ref={mainRef} className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative [scrollbar-gutter:stable]"
+          data-settings-page={location.pathname === '/settings' || undefined}>
           <div className="dog-corner-pet" aria-hidden>
             <span className="dog-corner-glow" />
             <img src="/logo.png" alt="" />

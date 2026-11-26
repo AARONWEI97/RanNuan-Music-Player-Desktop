@@ -1,16 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import { setStorageAdapter } from '@shared'
+import { setStorageAdapter, usePlayerStore, usePlaylistStore, useSettingsStore } from '@shared'
 import { localStorageAdapter } from './adapters/localStorageAdapter'
 
-/**
- * ★ 必须在任何 store 被读写之前同步注册。
- *
- * zustand persist 在 `@shared` 模块求值时就开始 rehydrate，若把这行推迟到
- * 动态 import 的 .then() 里，rehydrate 会先跑、`getStorageAdapter()` 抛错，
- * persist 静默降级为「storage unavailable」——播放状态/队列/音量全部不落盘。
- */
 setStorageAdapter(localStorageAdapter)
 
 /**
@@ -52,7 +45,13 @@ if (view === 'tray-panel' || view === 'lyrics' || view === 'taskbar-mini') {
   }
 } else {
   // ── 主窗口：唯一持有 audio / session / 快捷键的窗口 ──
-  import('./App').then(({ default: App }) => {
+  // 共享 store 首次求值时适配器还未注册。挂载前重新读取保存的偏好和播放状态。
+  Promise.all([
+    import('./App'),
+    useSettingsStore.persist.rehydrate(),
+    usePlayerStore.persist.rehydrate(),
+    usePlaylistStore.persist.rehydrate(),
+  ]).then(([{ default: App }]) => {
     root.render(<StrictMode><App /></StrictMode>)
   })
 }

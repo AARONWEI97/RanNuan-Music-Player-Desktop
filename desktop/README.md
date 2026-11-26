@@ -214,7 +214,7 @@ desktop/
 
 ## 🔌 API 服务
 
-本项目依赖 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 提供音乐数据接口，默认 API 地址为内置服务器。可在「设置 → 播放」中自定义 API 地址。
+本项目使用内置音乐服务提供数据接口。在「设置 → 网络与音源」可以手动检测连接，并查看检测结果和耗时。设置页的功能和验证范围见 [设置页升级执行文档](SETTINGS_UPGRADE.md)。
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "@rannuan/desktop",
   "private": true,
-  "version": "3.9.2",
+  "version": "3.9.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

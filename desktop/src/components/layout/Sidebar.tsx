@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '@shared'
 import { useAuthStore } from '@/store/authStore'
+import { useSystemDark } from '@/hooks/useSystemDark'
 import { thumbUrl } from '@/utils/image'
 import { Home, Search, Library, Heart, Settings, Sun, Moon, Clock, HardDrive, Trophy, LogIn, LogOut, User, Download, Coffee, Globe, PawPrint } from 'lucide-react'
 
@@ -20,8 +21,9 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const { theme, setTheme } = useSettingsStore()
   const { isLoggedIn, profile, logout } = useAuthStore()
+  const systemDark = useSystemDark()
   const isDogTheme = theme === 'dog-light' || theme === 'dog-dark'
-  const isDark = theme === 'dark' || theme === 'dog-dark'
+  const isDark = theme === 'dark' || theme === 'dog-dark' || (theme === 'system' && systemDark)
 
   const toggleTheme = () => {
     if (isDogTheme) {
@@ -38,7 +40,7 @@ export default function Sidebar() {
   return (
     <aside className="dog-sidebar relative w-52 flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#121212]">
       {/* Logo */}
-      <div className="dog-brand relative px-3 py-3.5 select-none border-b border-gray-200/50 dark:border-white/[0.04]">
+      <div className="dog-brand relative shrink-0 px-3 py-3.5 select-none border-b border-gray-200/50 dark:border-white/[0.04]">
         {/* brand glow */}
         <div className="absolute -inset-2 bg-[#e60026]/[0.03] dark:bg-[#e60026]/[0.02] rounded-2xl blur-xl opacity-0 hover:opacity-100 transition-opacity duration-500" />
         <div className="flex items-center gap-2 relative">
@@ -68,7 +70,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-2 space-y-0.5">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -95,7 +97,7 @@ export default function Sidebar() {
       </nav>
 
       {/* User section */}
-      <div className="px-3 pb-3 space-y-1 border-t border-gray-200 dark:border-gray-800 pt-3">
+      <div className="shrink-0 px-3 pb-3 space-y-1 border-t border-gray-200 dark:border-gray-800 pt-3">
         {isLoggedIn && profile ? (
           <>
             <button
