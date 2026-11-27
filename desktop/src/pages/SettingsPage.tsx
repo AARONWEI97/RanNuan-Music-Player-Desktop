@@ -255,6 +255,7 @@ export default function SettingsPage() {
   const [category, setCategory] = useState<Category>(categories[0])
   const [query, setQuery] = useState('')
   const pageRef = useRef<HTMLDivElement>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const search = query.trim().toLowerCase()
   const Section = sections[category.id]
@@ -269,6 +270,7 @@ export default function SettingsPage() {
       const page = pageRef.current
       const main = page?.closest('main')
       if (!page || !main) return
+      tabsRef.current?.querySelector('#settings-tab-' + next.id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
       if (!target) {
         main.scrollTo(0, 0)
         return
@@ -281,6 +283,22 @@ export default function SettingsPage() {
       const top = section.getBoundingClientRect().top - main.getBoundingClientRect().top
       main.scrollTo(0, main.scrollTop + top - 16)
     })
+  }
+
+  function handleTabKey(event: KeyboardEvent<HTMLButtonElement>, item: Category) {
+    const index = categories.indexOf(item)
+    const last = categories.length - 1
+    const nextIndex = {
+      ArrowLeft: index === 0 ? last : index - 1,
+      ArrowRight: index === last ? 0 : index + 1,
+      Home: 0,
+      End: last,
+    }[event.key]
+    if (nextIndex === undefined) return
+    event.preventDefault()
+    const next = categories[nextIndex]
+    select(next)
+    tabsRef.current?.querySelector<HTMLButtonElement>('#settings-tab-' + next.id)?.focus({ preventScroll: true })
   }
 
   return (
@@ -300,37 +318,39 @@ export default function SettingsPage() {
           {query && <button type="button" aria-label="清空搜索" onClick={() => { setQuery(''); inputRef.current?.focus() }}><X size={16} /></button>}
         </div>
       </header>
-      <div className="settings-layout">
-        <nav className="settings-nav" aria-label="设置分类">
-          {categories.map(item => (
-            <button key={item.id} type="button" aria-current={!search && item.id === category.id ? 'page' : undefined}
-              onClick={() => select(item)}>
-              <item.icon size={17} aria-hidden="true" />
-              <span>{item.title}</span>
-              <ChevronRight className="settings-nav-chevron" size={15} aria-hidden="true" />
-            </button>
-          ))}
-        </nav>
-        <section className="settings-content" aria-labelledby="settings-content-heading">
-          <div className="settings-content-header">
-            <h2 id="settings-content-heading">{search ? '搜索结果' : category.title}</h2>
-            {!search && <p>{category.description}</p>}
-          </div>
-          {search ? (
-            <div className="settings-panel">
-              {matches.length === 0 && <p className="settings-empty" role="status">没有找到相关设置。</p>}
-              {matches.map(result => (
-                <button type="button" className="settings-search-result" key={result.id}
-                  onClick={() => select(result.category, result.id)}>
-                  <result.category.icon size={18} aria-hidden="true" />
-                  <span><strong>{result.title}</strong><small>{result.category.title}</small></span>
-                  <ChevronRight size={16} aria-hidden="true" />
-                </button>
-              ))}
-            </div>
-          ) : <Section />}
-        </section>
+      <div ref={tabsRef} className="settings-tabs" role="tablist" aria-label="设置分类">
+        {categories.map(item => (
+          <button key={item.id} id={'settings-tab-' + item.id} type="button" role="tab"
+            aria-selected={!search && item.id === category.id} aria-controls="settings-category-panel"
+            tabIndex={item.id === category.id ? 0 : -1} onClick={() => select(item)}
+            onKeyDown={event => handleTabKey(event, item)}>
+            <item.icon size={17} aria-hidden="true" />
+            {item.title}
+          </button>
+        ))}
       </div>
+      <section className="settings-content" aria-labelledby="settings-content-heading">
+        <div className="settings-content-header">
+          <h2 id="settings-content-heading">{search ? '搜索结果' : category.title}</h2>
+          {!search && <p>{category.description}</p>}
+        </div>
+        {search && (
+          <div className="settings-panel">
+            {matches.length === 0 && <p className="settings-empty" role="status">没有找到相关设置。</p>}
+            {matches.map(result => (
+              <button type="button" className="settings-search-result" key={result.id}
+                onClick={() => select(result.category, result.id)}>
+                <result.category.icon size={18} aria-hidden="true" />
+                <span><strong>{result.title}</strong><small>{result.category.title}</small></span>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        )}
+        <div id="settings-category-panel" role="tabpanel" aria-labelledby={'settings-tab-' + category.id} hidden={!!search}>
+          {!search && <Section />}
+        </div>
+      </section>
     </div>
   )
 }

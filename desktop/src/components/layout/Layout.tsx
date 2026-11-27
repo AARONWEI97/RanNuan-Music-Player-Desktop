@@ -230,7 +230,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       <div className="relative z-[1] flex flex-1 overflow-hidden min-h-0">
         <Sidebar />
         <main ref={mainRef} className="dog-main flex-1 overflow-y-auto p-6 pb-24 relative [scrollbar-gutter:stable]"
-          data-settings-page={location.pathname === '/settings' || undefined}>
+          data-settings-page={location.pathname === '/settings' || undefined}
+          data-artist-page={location.pathname.startsWith('/artist/') || undefined}>
           <div className="dog-corner-pet" aria-hidden>
             <span className="dog-corner-glow" />
             <img src="/logo.png" alt="" />

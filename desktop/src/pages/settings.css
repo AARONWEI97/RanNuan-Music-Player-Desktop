@@ -46,9 +46,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 21px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--settings-line);
+  margin-bottom: 14px;
 }
 
 .settings-header h1 { font-size: 27px; font-weight: 780; letter-spacing: -.045em; line-height: 1.25; }
@@ -72,47 +70,38 @@
 .settings-search input::-webkit-search-cancel-button { display: none; }
 .settings-search button { flex: none; line-height: 1; cursor: pointer; }
 
-.settings-layout {
-  display: grid;
-  grid-template-columns: minmax(145px, 182px) minmax(0, 1fr);
-  align-items: start;
-  gap: clamp(18px, 3cqw, 36px);
-}
-
-.settings-nav {
-  position: sticky;
-  top: 12px;
-  display: grid;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 13px;
-  border: 1px solid var(--settings-line);
-  background: var(--settings-surface);
-}
-
-.settings-nav button {
+.settings-tabs {
   display: flex;
+  gap: clamp(2px, 1cqw, 12px);
+  overflow-x: auto;
+  margin-bottom: 20px;
+  padding: 3px 3px 0;
+  border-bottom: 1px solid var(--settings-line);
+  scrollbar-width: thin;
+}
+
+.settings-tabs button {
+  display: flex;
+  flex: none;
   align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  min-height: 38px;
-  border-radius: 8px;
-  text-align: left;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px clamp(8px, 1.4cqw, 16px);
+  min-height: 42px;
+  border-bottom: 2px solid transparent;
+  border-radius: 7px 7px 0 0;
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 570;
   color: var(--settings-muted);
   cursor: pointer;
 }
-.settings-nav button > svg { flex: none; }
-.settings-nav button:hover { color: var(--settings-ink); background: var(--settings-soft); }
-.settings-nav button[aria-current] {
+.settings-tabs button:hover { color: var(--settings-ink); background: var(--settings-soft); }
+.settings-tabs button[aria-selected='true'] {
   color: var(--settings-accent);
-  background: color-mix(in srgb, var(--settings-accent) 10%, var(--settings-surface));
-  box-shadow: inset 2px 0 var(--settings-accent);
-  font-weight: 700;
+  border-bottom-color: var(--settings-accent);
+  background: color-mix(in srgb, var(--settings-accent) 8%, transparent);
 }
-.settings-nav-chevron { margin-left: auto; visibility: hidden; }
-.settings-nav button[aria-current] .settings-nav-chevron { visibility: visible; }
 
 .settings-content { min-width: 0; }
 .settings-content-header { margin-bottom: 21px; }
@@ -206,6 +195,7 @@
   outline: 2px solid var(--settings-accent);
   outline-offset: 2px;
 }
+.settings-page .settings-tabs button:focus-visible { outline-offset: -4px; }
 .settings-theme-preview {
   --preview-bg: #e8e9ee;
   --preview-shell: #fdfdff;
@@ -300,11 +290,9 @@
 .settings-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 @container (max-width: 670px) {
-  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .settings-nav { position: static; display: flex; flex-wrap: wrap; gap: 3px; }
-  .settings-nav button { min-height: 34px; padding: 6px 8px; }
-  .settings-nav button[aria-current] { box-shadow: none; }
-  .settings-nav-chevron { display: none; }
+  .settings-tabs { gap: 2px; margin-bottom: 16px; }
+  .settings-tabs button { gap: 5px; }
+  .settings-tabs button > svg { width: 15px; height: 15px; }
   .settings-content-header { margin-bottom: 15px; }
 }
 

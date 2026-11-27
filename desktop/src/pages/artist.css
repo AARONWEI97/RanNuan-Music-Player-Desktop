@@ -1,0 +1,73 @@
+.dog-main[data-artist-page] > .dog-corner-pet { right: 8px; }
+
+.artist-page { container-type: inline-size; }
+
+.artist-hero {
+  --artist-hero-color: #282431;
+  --artist-hero-padding: clamp(18px, 3cqw, 32px);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(244px, 35cqw, 310px);
+  overflow: hidden;
+  padding: 66px var(--artist-hero-padding) var(--artist-hero-padding);
+  border-radius: 16px;
+  color: white;
+  background: var(--artist-hero-color);
+}
+
+.dog-theme .artist-hero { --artist-hero-color: #352823; }
+
+.artist-hero-backdrop {
+  position: absolute;
+  z-index: -3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  filter: blur(28px);
+  transform: scale(1.12);
+  opacity: .7;
+}
+
+.artist-hero::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #100e15ed, #15111bc2 33%, #17131d3d 78%),
+    linear-gradient(0deg, #110e16ad, transparent 65%);
+}
+
+.artist-hero-photo {
+  position: absolute;
+  z-index: -1;
+  inset: 0 2% 0 46%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.artist-hero-photo img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  mask-image:
+    linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent),
+    linear-gradient(0deg, transparent, #000 19%);
+  mask-composite: intersect;
+}
+
+.artist-hero-back { position: absolute; top: 16px; left: var(--artist-hero-padding); }
+.artist-hero-info { max-width: 48%; overflow-wrap: anywhere; }
+.artist-hero-name { font-size: clamp(27px, 4.4cqw, 48px); font-weight: 750; line-height: 1.12; }
+
+@container (max-width: 460px) {
+  .artist-hero:has(.artist-hero-photo) { padding-top: 218px; }
+  .artist-hero-photo { inset: 0 0 auto; height: 218px; }
+  .artist-hero-info { max-width: 100%; }
+}

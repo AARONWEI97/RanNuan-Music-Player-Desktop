@@ -20,8 +20,7 @@ import LoadMore from '@/components/common/LoadMore'
 import { usePaginatedList } from '@/hooks/usePaginatedList'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { useProgressiveRender } from '@/hooks/useProgressiveRender'
-import { useImageColor } from '@/hooks/useImageColor'
-import { heroUrl, avatarUrl, coverUrl } from '@/utils/image'
+import { avatarUrl, coverUrl } from '@/utils/image'
 import { TabCache } from '@/components/layout/KeepAlive'
 import { useAuthStore } from '@/store/authStore'
 import { showToast } from '@/utils/toast'
@@ -31,6 +30,7 @@ import {
   ArrowLeft, Play, Music, Disc,
   UserPlus, UserCheck, Film, Users, Loader, AlertCircle, RefreshCw,
 } from 'lucide-react'
+import './artist.css'
 
 type ArtistTabType = 'hot' | 'all' | 'album' | 'mv'
 
@@ -259,6 +259,22 @@ const TABS: { key: ArtistTabType; label: string; icon: React.ElementType }[] = [
   { key: 'mv', label: 'MV', icon: Film },
 ]
 
+function ArtistArtwork({ cover, avatar }: Pick<ArtistInfo, 'cover' | 'avatar'>) {
+  const [failedImages, setFailedImages] = useState(0)
+  const images = [...new Set([cover, avatar].filter(Boolean))]
+  const source = images[failedImages]
+  if (!source) return null
+
+  return (
+    <>
+      <img className="artist-hero-backdrop" src={source} alt="" decoding="async" />
+      <div className="artist-hero-photo">
+        <img key={source} src={source} alt="" decoding="async" onError={() => setFailedImages(failedImages + 1)} />
+      </div>
+    </>
+  )
+}
+
 export default function ArtistPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -297,12 +313,6 @@ export default function ArtistPage() {
   // Similar artists
   const [similarArtists, setSimilarArtists] = useState<any[]>([])
   const [retryId, setRetryId] = useState(0)
-
-  // ★ useImageColor 放在 hero 区域的主组件，不拆分（因为它需要和 artist state 联动）
-  const rawArtistCover = artist?.cover || artist?.avatar || ''
-  const optimizedCover = heroUrl(rawArtistCover)
-  // 传优化后的 URL 给 useImageColor，避免二次下载原图
-  const { primaryColor } = useImageColor(optimizedCover)
 
   // ─── Data load ───
   useEffect(() => {
@@ -436,39 +446,28 @@ export default function ArtistPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="artist-page space-y-6">
       {/* ─── Cover Hero ─── */}
-      <div className="relative rounded-2xl overflow-hidden" style={{ transform: 'translateZ(0)' }}>
-        {rawArtistCover ? (
-          <img
-            src={optimizedCover}
-            alt=""
-            className="w-full h-56 object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-        ) : (
-          <div className="w-full h-56 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800" />
-        )}
-        <div className="absolute inset-0" style={{ background: `linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 40%, ${primaryColor}33 100%)` }} />
+      <header className="artist-hero">
+        {artist && <ArtistArtwork key={JSON.stringify([artist.cover, artist.avatar])} cover={artist.cover} avatar={artist.avatar} />}
         <button aria-label="返回" onClick={goBack}
-          className="absolute top-4 left-4 p-2 rounded-full bg-black/30 hover:bg-black/60 text-white transition-colors backdrop-blur-sm">
+          className="artist-hero-back p-2 rounded-full bg-black/30 hover:bg-black/60 text-white transition-colors">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div className="absolute bottom-0 left-0 right-0 p-6">
-          <h1 className="text-3xl font-bold text-white drop-shadow-lg">{artist?.name}</h1>
-          {artist?.alias?.length ? <p className="text-sm text-white/70 mt-1">{artist.alias.join(' / ')}</p> : null}
-          <div className="flex items-center gap-4 mt-3 text-white/80 text-sm">
+        <div className="artist-hero-info">
+          <h1 className="artist-hero-name">{artist?.name}</h1>
+          {artist?.alias?.length ? <p className="text-sm text-white/75 mt-1">{artist.alias.join(' / ')}</p> : null}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-white/85 text-sm">
             <span className="flex items-center gap-1"><Music className="w-4 h-4" />{artist?.musicSize || 0} 首</span>
             <span className="flex items-center gap-1"><Disc className="w-4 h-4" />{artist?.albumSize || 0} 专辑</span>
             {followCount > 0 && <span className="flex items-center gap-1"><Users className="w-4 h-4" />{followCount} 关注</span>}
             <button onClick={handleFollow} disabled={followLoading}
-              className={`ml-2 flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium transition-colors ${followed ? 'bg-white/20 text-white border border-white/30' : 'bg-[#e60026] text-white hover:bg-[#c4001f]'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium transition-colors ${followed ? 'bg-white/20 text-white border border-white/30' : 'bg-[#e60026] text-white hover:bg-[#c4001f]'}`}>
               {followed ? <UserCheck className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}{followed ? '已关注' : '+ 关注'}
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* ─── Description ─── */}
       {(desc || artist?.briefDesc) ? (
